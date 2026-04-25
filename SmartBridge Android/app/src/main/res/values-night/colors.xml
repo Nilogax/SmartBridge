@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Main Brand Colors (same as light theme) -->
+    <color name="lime_green">#A6D933</color>
+    <color name="cyan">#4ECDC4</color>
+    <color name="red">#FF4C4C</color>
+    <color name="gold">#FFCC88</color>
+
+    <!-- Dialog Colors -->
+    <color name="dialog_background_dark">#1C1C1E</color>
+    <color name="dialog_text_dark">#F0F0F0</color>
+
+    <!-- Card Backgrounds - Dark Mode Versions -->
+    <color name="bike_card_bg">#2C1F1F</color>      <!-- Dark red-ish tone -->
+    <color name="bridge_card_bg">#1F2A38</color>    <!-- Dark blue-ish tone -->
+    <color name="data_card_bg">#1F2A1F</color>   <!-- Dark green-ish tone -->
+
+</resources>

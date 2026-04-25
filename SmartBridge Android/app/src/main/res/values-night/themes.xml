@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Theme.SmartBridge" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">#FFFFFF</item>
+        <item name="colorOnPrimary">#000000</item>
+
+        <item name="colorSecondary">@color/cyan</item>
+        <item name="colorOnSecondary">#000000</item>
+
+        <item name="colorSurface">#181818</item>
+        <item name="colorOnSurface">#F0F0F0</item>
+        <item name="colorOnSurfaceVariant">#D0D0D0</item>
+        <item name="android:colorBackground">#0F0F0F</item>
+
+        <item name="colorError">@color/red</item>
+
+        <item name="shapeAppearanceCornerMedium">@dimen/corner_medium</item>
+        <item name="shapeAppearanceCornerLarge">@dimen/corner_large</item>
+
+        <item name="materialAlertDialogTheme">@style/Theme.SmartBridge.Dialog</item>
+    </style>
+
+    <style name="Theme.SmartBridge.Dialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="colorSurface">@color/dialog_background_dark</item>
+        <item name="colorOnSurface">@color/dialog_text_dark</item>
+
+        <!-- Force all dialog text to proper color -->
+        <item name="android:textColor">@color/dialog_text_dark</item>
+        <item name="colorOnSurfaceVariant">@color/dialog_text_dark</item>
+
+        <!-- Strong button overrides -->
+        <item name="buttonBarPositiveButtonStyle">@style/Widget.SmartBridge.Dialog.Button</item>
+        <item name="buttonBarNegativeButtonStyle">@style/Widget.SmartBridge.Dialog.Button</item>
+        <item name="buttonBarNeutralButtonStyle">@style/Widget.SmartBridge.Dialog.Button</item>
+    </style>
+
+    <style name="Widget.SmartBridge.Dialog.Button" parent="Widget.Material3.Button.TextButton.Dialog">
+        <item name="android:textColor">@color/dialog_text_dark</item>
+        <item name="android:textColorPrimary">@color/dialog_text_dark</item>
+        <item name="android:textColorSecondary">@color/dialog_text_dark</item>
+    </style>
+
+</resources>

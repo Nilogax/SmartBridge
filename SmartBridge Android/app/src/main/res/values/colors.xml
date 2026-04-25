@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="lime_green">#A6D933</color>
+    <color name="cyan">#4ECDC4</color>
+    <color name="red">#FF4C4C</color>
+    <color name="gold">#FFCC88</color>
+
+    <!-- Card Backgrounds -->
+    <color name="bike_card_bg">#FFDDDD</color>
+    <color name="bridge_card_bg">#E0F0FF</color>
+    <color name="data_card_bg">#F0F7E6</color>
+
+    <color name="bridge_button_bg">#BBDEFB</color>
+    <color name="bike_button_bg">#FFCDD2</color>
+    <color name="data_button_bg">#C8E6C9</color>
+
+    <color name="bridge_text">#1976D2</color>
+    <color name="bike_text">#D32F2F</color>
+    <color name="data_text">#2E7D32</color>
+
+    <!-- Dialog colors that work in both themes -->
+    <color name="dialog_background_light">#FFFFFF</color>
+    <color name="dialog_background_dark">#1C1C1E</color>
+    <color name="dialog_text_light">#1F1F1F</color>
+    <color name="dialog_text_dark">#F0F0F0</color>
+</resources>

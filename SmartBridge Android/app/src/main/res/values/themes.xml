@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Theme.SmartBridge" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">#000000</item>
+        <item name="colorOnPrimary">#000000</item>
+
+        <item name="colorSecondary">@color/cyan</item>
+        <item name="colorOnSecondary">#000000</item>
+
+        <item name="colorSurface">#E8E6E1</item>
+        <item name="colorOnSurface">#1F1F1F</item>
+        <item name="colorOnSurfaceVariant">#4A4A4A</item>   <!-- Slightly softer for secondary text -->
+        <item name="android:colorBackground">#E8E6E1</item>
+
+        <item name="colorError">@color/red</item>
+
+        <!-- Shapes -->
+        <item name="shapeAppearanceCornerMedium">@dimen/corner_medium</item>
+        <item name="shapeAppearanceCornerLarge">@dimen/corner_large</item>
+
+        <!-- Dialog theme -->
+        <item name="materialAlertDialogTheme">@style/Theme.SmartBridge.Dialog</item>
+    </style>
+
+    <style name="Theme.SmartBridge.Dialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="colorSurface">@color/dialog_background_light</item>
+        <item name="colorOnSurface">@color/dialog_text_light</item>
+
+        <!-- Force all dialog text to proper color -->
+        <item name="android:textColor">@color/dialog_text_light</item>
+        <item name="colorOnSurfaceVariant">@color/dialog_text_light</item>
+
+        <!-- Strong button overrides -->
+        <item name="buttonBarPositiveButtonStyle">@style/Widget.SmartBridge.Dialog.Button</item>
+        <item name="buttonBarNegativeButtonStyle">@style/Widget.SmartBridge.Dialog.Button</item>
+        <item name="buttonBarNeutralButtonStyle">@style/Widget.SmartBridge.Dialog.Button</item>
+    </style>
+
+    <style name="Widget.SmartBridge.Dialog.Button" parent="Widget.Material3.Button.TextButton.Dialog">
+        <item name="android:textColor">@color/dialog_text_light</item>
+        <item name="android:textColorPrimary">@color/dialog_text_light</item>
+        <item name="android:textColorSecondary">@color/dialog_text_light</item>
+    </style>
+
+    <style name="ToolbarTitleAppearance" parent="TextAppearance.Material3.TitleLarge">
+        <item name="android:textStyle">bold</item>
+        <item name="android:textFontWeight">900</item>
+        <item name="android:letterSpacing">-0.02</item>
+    </style>
+
+</resources>

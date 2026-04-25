@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="corner_medium">16dp</dimen>
+    <dimen name="corner_large">20dp</dimen>
+</resources>
