@@ -156,6 +156,8 @@ Once your bridge is powered up you should add it to your Garmin.  The procedure 
 
 Distributed under the GPL-2.0 license. See ``LICENSE`` for more information.
 
+* 0.9.1 (25/4/2026)
+    * Corrected APK file
 * 0.9.0 (25/4/2026)
     * First Beta release
 
