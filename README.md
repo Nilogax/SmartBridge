@@ -66,7 +66,7 @@ You will need both the Android app for your phone and the Arduino sketch to run 
 
 ### SmartBridge Android App
 
-The easiest way to get this is to install the APK from the `/Android APK` folder in your cloned repository onto your phone.  To do this you will need to enable the option to load APKs that aren't from Google Play - check the details of this for your phone.
+The easiest way to get this is to install the APK from the [latest release](https://github.com/Nilogax/SmartBridge/releases) onto your phone.  To do this you will need to enable the option to load APKs that aren't from Google Play - check the details of this for your phone.
 
 Alternatively you can build it from the source code using Android Studio:
 
