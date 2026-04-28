@@ -8,7 +8,7 @@ A project to enable Bosch ebikes to send power data to Garmin devices via an And
 
 Like many other Bosch ebike owners I was disappointed that the ebike didn't link to my Garmin, this project addresses that.  It needs a small amount of extra hardware (total cost in the UK from around £30-£40) but there is minimal (if any) soldering and full instructions are provided below.
 
-The SmartBridge Android app reads rider power, motor power, cadence and battery level from the bike.  Power data and cadence is then sent to the nRF52840 board running the SmartBridge Anduino sketch which acts as a bridge to send the data on to the Garmin by emulating a power sensor.
+The SmartBridge Android app reads rider power, motor power, cadence and battery level from the bike.  Power data and cadence is then sent to the nRF52840 board running the SmartBridge Anduino sketch which acts as a bridge to send the data on to the Garmin by emulating a Bluetooth power sensor.
 
 The standard Bluetooth power sensor protocol doesn't allow both rider and motor power to be sent so it sends the rider power as the 'Power' level and uses the left/right balance field to show the relative contribution of rider and motor.  Bike battery alerts are sent as phone notifications at configurable intervals.
 
@@ -19,6 +19,9 @@ This is still very much a beta project.  I welcome feedback on how easy you foun
 At present the list of known working configurations is:
 
 - Bosch SX Motor, Pixel 8 phone, Seeed XIAO nRF52840 Sense, Garmin Edge 830
+
+
+The Garmin Edge 520 will only pair with ANT+ sensors so aren't (yet) compatible. 
 
 If your configuration isn't listed it may still work.  I'd suggest starting by just installing the Android app and making sure that it pairs with your bike and displays data whilst riding.  If that's successful then go on to get the bridge hardware and connect that with your device.
 
