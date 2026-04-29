@@ -37,7 +37,7 @@ You will need:
 
 - a case.  My board came in a neat 35mm x 20mm padded screw top case which is perfect for my plan to carry it in my pack.  If you want to mount it to the bike then something more waterproof would be needed.
 
-- a battery.  The nRF52840 is a low power device so you don't need a huge battery.  A 3.7V 150mAh LiPo battery should last for about 5-10 hours of riding and the Seeed board has a built in charging circuit so you can recharge the battery by plugging a USB-C power source into the board.  A larger capacity battery will obviously mean less recharging but make sure it will fit in your case.
+- a battery.  The nRF52840 is a low power device so you don't need a huge battery.  A 3.7V 150mAh LiPo battery should last for about 5-10 hours of riding and the Seeed board has a built in charging circuit so you can recharge the battery by plugging a USB-C power source into the board.  A larger capacity battery will obviously mean less recharging but make sure it will fit in your case.  You can also use a USB power bank to power the board but ensure that your power bank will operate in a low power mode.  The board draws very little power so this might not be enough to keep some power banks switched on.  This is exacerbated when the board drops into sleep mode as that uses even less power.
 
 - a way to connect the battery to the board.  If you are competent with a soldering iron then you can either solder the battery directly to the small rectangular tabs on the back of the board or (recommended) solder a JST 2.0 PH pigtail connector to the board and plug the battery into that. <br/> ![Soldering](./images/soldering.png) <br/> Obviously make sure you use the same connector type that your battery has and that the polarity isn't changed by the connector (ie the red wire from the battery connects to the red wire to the board).  If you aren't happy with soldering small components then you could try your local phone/gadget repair shop as they should have everything needed to do the job.  Other options are the "Seeed XIAO Expansion Board" which includes a JST 2.0 battery connector and plugs straight onto the Sense board without any need for soldering (though I'm not sure how robust that connection is for use on a bike), or of course the Adafruit board which has the battery connection built in.
 
@@ -85,8 +85,8 @@ Alternatively you can build it from the source code using Android Studio:
 
 ### SmartBridge Arduino sketch
 
-1. Download and install the Arduino IDE from https://www.arduino.cc/en/software/
-
+1. Download and install the Arduino IDE from https://www.arduino.cc/en/software/ - you may also need to install Python from the MS Store.
+ 
 1. Add the Seeed board to the IDE.  Go to `File/Preferences`, scroll to the bottom and in `Additional boards manager URLs` add `https://files.seeedstudio.com/arduino/package_seeeduino_boards_index.json`, then click `OK`.
 
 1. In the IDE go to `Tools/Boards manager` and search for `Seeed nRF52 Boards`.  Click `Install`.  Do not select `Seeed nRF52 mbed-enabled Boards`!
