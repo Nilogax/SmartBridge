@@ -2,6 +2,8 @@
 
 A project to enable Bosch ebikes to send power data to Garmin devices via an Android phone and nRF52840 board.
 
+[![Support me on Ko-fi](https://img.shields.io/badge/Support%20Me%20on%20Ko--fi-F16061?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/nilogax)
+
 ![Garmin](./images/garmin_resized.png)
 
 ## Overview
@@ -19,7 +21,7 @@ This is still very much a beta project.  I welcome feedback on how easy you foun
 At present the list of known working configurations is:
 
 - Bosch SX Motor, Pixel 8 phone, Seeed XIAO nRF52840 Sense, Garmin Edge 830
-
+- Bosch Gen 5 Motor, Pixel 10 Pro XL, Seeed XIAO nRF52840 Sense, Garmin Edge Explore 2
 
 The Garmin Edge 520 will only pair with ANT+ sensors so aren't (yet) compatible. 
 
@@ -27,7 +29,9 @@ If your configuration isn't listed it may still work.  I'd suggest starting by j
 
 I'd strongly recommend subscribing to the [SmartBridge Updates](https://github.com/Nilogax/SmartBridge/discussions/1) discussion as well, so you stay informed about any development of this code.
 
-If you have found SmartBridge useful then you can show your appreciation by buying me a coffee here:  [![Ko-fi link](https://img.shields.io/badge/Support-Ko--fi-F16061?style=flat-square&logo=ko-fi)](https://ko-fi.com/nilogax)
+If you have found SmartBridge useful then you can show your appreciation by buying me a coffee here:  
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/nilogax)
 
 ## Hardware
 
@@ -37,9 +41,11 @@ You will need:
 
 - a case.  My board came in a neat 35mm x 20mm padded screw top case which is perfect for my plan to carry it in my pack.  If you want to mount it to the bike then something more waterproof would be needed.
 
-- a battery.  The nRF52840 is a low power device so you don't need a huge battery.  A 3.7V 150mAh LiPo battery should last for about 5-10 hours of riding and the Seeed board has a built in charging circuit so you can recharge the battery by plugging a USB-C power source into the board.  A larger capacity battery will obviously mean less recharging but make sure it will fit in your case.  You can also use a USB power bank to power the board but ensure that your power bank will operate in a low power mode.  The board draws very little power so this might not be enough to keep some power banks switched on.  This is exacerbated when the board drops into sleep mode as that uses even less power.
+- a power source.  This can either be a battery (preferred) or power via the USB-C port.
+    - Battery Option.  The nRF52840 is a low power device so you don't need a huge battery.  A 3.7V 150mAh LiPo battery should last for about 5-10 hours of riding and the Seeed board has a built in charging circuit so you can recharge the battery by plugging a USB-C power source into the board.  A larger capacity battery will obviously mean less recharging but make sure it will fit in your case.
+    - USB-C Option.  You can also use the USB-C connection to power the board.  If using a power bank ensure that it doesn't have a low power cutoff.  The board draws very little power so some power banks will stop delivering power if this is below their minimum threshold.  An alternative would be to use reverse charging from your phone (though not all phones support this).  In either case make sure the board is still well protected from dust and moisture with only the USB-C port exposed.
 
-- a way to connect the battery to the board.  If you are competent with a soldering iron then you can either solder the battery directly to the small rectangular tabs on the back of the board or (recommended) solder a JST 2.0 PH pigtail connector to the board and plug the battery into that. <br/> ![Soldering](./images/soldering.png) <br/> Obviously make sure you use the same connector type that your battery has and that the polarity isn't changed by the connector (ie the red wire from the battery connects to the red wire to the board).  If you aren't happy with soldering small components then you could try your local phone/gadget repair shop as they should have everything needed to do the job.  Other options are the "Seeed XIAO Expansion Board" which includes a JST 2.0 battery connector and plugs straight onto the Sense board without any need for soldering (though I'm not sure how robust that connection is for use on a bike), or of course the Adafruit board which has the battery connection built in.
+- a way to connect the battery to the board (if using a battery).  If you are competent with a soldering iron then you can either solder the battery directly to the small rectangular tabs on the back of the board or (recommended) solder a JST 2.0 PH pigtail connector to the board and plug the battery into that. <br/> ![Soldering](./images/soldering.png) <br/> Obviously make sure you use the same connector type that your battery has and that the polarity isn't changed by the connector (ie the red wire from the battery connects to the red wire to the board).  If you aren't happy with soldering small components then you could try your local phone/gadget repair shop as they should have everything needed to do the job.  Other options are the "Seeed XIAO Expansion Board" which includes a JST 2.0 battery connector and plugs straight onto the Sense board without any need for soldering (though I'm not sure how robust that connection is for use on a bike), or of course the Adafruit board which has the battery connection built in.
 
 ### Hardware Sources
 
@@ -159,6 +165,9 @@ Once your bridge is powered up you should add it to your Garmin.  The procedure 
 
 Distributed under the GPL-2.0 license. See ``LICENSE`` for more information.
 
+* 0.9.2 (3/5/2026)
+    * Update Arduino sketch to improve BLE stability
+    * No change to app from 0.9.1
 * 0.9.1 (25/4/2026)
     * Corrected APK file
 * 0.9.0 (25/4/2026)
