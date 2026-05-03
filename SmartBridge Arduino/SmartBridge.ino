@@ -1,4 +1,3 @@
-// SmartBridge v0.9.0
 // Boards supported:
 //   - Seeed XIAO nRF52840 Sense        (Default)
 //   - Adafruit Feather nRF52840 Sense  (ARDUINO_ADAFRUIT_FEATHER_NRF52840_SENSE) - UNTESTED
@@ -7,6 +6,8 @@
 #include <Wire.h>
 #include "LSM6DS3.h"
 
+#define FW_VERSION "0.9.2"
+
 #define BLE_TX_POWER  0
 
 #define ADV_INTERVAL_FAST   160
@@ -14,7 +15,7 @@
 
 #if defined(ARDUINO_ADAFRUIT_FEATHER_NRF52840_SENSE)
   // Adafruit config
-  #define IMU_INT1_PIN   11   
+  #define IMU_INT1_PIN   11
   #define LED_A          LED_RED
   #define LED_B          LED_BLUE
   #define LED_A_AWAKE_NORMAL    LOW
@@ -25,7 +26,7 @@
   #define LED_B_SLEEP    HIGH
   #define VBAT_PIN       PIN_A6
   #define VBAT_SCALE     (3.3f / 4096.0f * 2.0f)
-#else 
+#else
   // Seeed XIAO nRF52840 Sense
 
   #define IMU_INT1_PIN   PIN_LSM6DS3TR_C_INT1
@@ -98,6 +99,17 @@ volatile bool     wakeRequested = false;
 volatile uint8_t  tapCountISR  = 0;
 volatile uint32_t firstTapTime = 0;
 
+uint16_t garmin_conn_hdl = BLE_CONN_HANDLE_INVALID;
+uint16_t android_conn_hdl = BLE_CONN_HANDLE_INVALID;
+
+// ----------------- Battery
+
+enum BatReadState { BAT_IDLE, BAT_ENABLE_WAIT, BAT_SAMPLING, BAT_DONE };
+static BatReadState batState = BAT_IDLE;
+static uint32_t batStateStart = 0;
+static uint32_t batSum = 0;
+static uint8_t  batSamples = 0;
+
 LSM6DS3Core myIMU(I2C_MODE, 0x6A);
 
 #define TAP_WINDOW_MS    3000UL
@@ -111,6 +123,10 @@ LSM6DS3Core myIMU(I2C_MODE, 0x6A);
 #define BAT_FULL   4.10f
 #define BAT_EMPTY  3.30f
 #define BAT_RANGE  (BAT_FULL - BAT_EMPTY)
+
+// Forward declarations
+void onCpmSubscribe(uint16_t conn_hdl, BLECharacteristic* chr, uint16_t cccd_value);
+void onAndroidTxSubscribe(uint16_t conn_hdl, BLECharacteristic* chr, uint16_t cccd_value);
 
 // ─────────────────────────────────────────────────────────────────────────────
 void setup() {
@@ -146,7 +162,7 @@ void setup() {
   startAdv();
 
   lastActivityTime = millis();
-  Serial.println("SmartBridge v3.6");
+  Serial.println("SmartBridge v" FW_VERSION);
 }
 
 void forceBlueLEDOff() {
@@ -181,7 +197,7 @@ void configureIMUForCurrentState() {
   myIMU.writeRegister(LSM6DS3_ACC_GYRO_TAP_CFG1, 0x00);
   delay(20);
 
-  // 0x30 = 50 Hz in sleep 
+  // 0x30 = 50 Hz in sleep
   // 0x00 = off when awake
   uint8_t odr = (currentState == AWAKE) ? 0x00 : 0x30;
   myIMU.writeRegister(LSM6DS3_ACC_GYRO_CTRL1_XL, odr);
@@ -193,7 +209,7 @@ void configureIMUForCurrentState() {
   } else if (currentState == SLEEP_TRANSPORT) {
     myIMU.writeRegister(LSM6DS3_ACC_GYRO_TAP_CFG1, 0x8E); // Enable XYZ tap
     myIMU.writeRegister(LSM6DS3_ACC_GYRO_TAP_THS_6D, 0x8A); // deliberate firm taps
-    myIMU.writeRegister(LSM6DS3_ACC_GYRO_INT_DUR2, 0x7E); 
+    myIMU.writeRegister(LSM6DS3_ACC_GYRO_INT_DUR2, 0x7E);
     myIMU.writeRegister(LSM6DS3_ACC_GYRO_MD1_CFG, 0x40);  // Route Single Tap to INT1
 
     Serial.println("IMU: Transport sleep (firm taps)");
@@ -231,16 +247,21 @@ void imuISR() {
 // ─── Sleep / Wake ────────────────────────────────────────────────────────────
 void enterSleep() {
   currentState = transportMode ? SLEEP_TRANSPORT : SLEEP_NORMAL;
-  Bluefruit.autoConnLed(false);
-  setLEDs();
-  configureIMUForCurrentState();
-
-  Bluefruit.Advertising.stop();
   Bluefruit.Advertising.restartOnDisconnect(false);
-  for (uint16_t hdl = 0; hdl < BLE_MAX_CONNECTION; hdl++) {
+
+for (uint16_t hdl = 0; hdl < BLE_MAX_CONNECTION; hdl++) {
     if (Bluefruit.connected(hdl)) Bluefruit.disconnect(hdl);
   }
-  delay(50);
+  delay(200);
+
+  Bluefruit.Advertising.stop();
+
+
+
+  Bluefruit.autoConnLed(false);
+  setLEDs();
+
+  configureIMUForCurrentState();
 
   Serial.printf(">>> ENTERED %s SLEEP\n", transportMode ? "TRANSPORT" : "NORMAL");
   Serial.flush();
@@ -274,6 +295,61 @@ void wakeUp() {
   Serial.println(">>> DEVICE AWAKE – BLE restarted");
 }
 
+// --- Battery ------------
+
+void updateBatteryNonBlocking() {
+  uint32_t now = millis();
+  switch (batState) {
+    case BAT_IDLE:
+      if (now - lastBatteryRead < 5000) return;
+      #ifdef HAS_VBAT_ENABLE
+        pinMode(VBAT_ENABLE, OUTPUT);
+        digitalWrite(VBAT_ENABLE, LOW);
+      #endif
+      analogReference(AR_DEFAULT);
+      analogReadResolution(12);
+      analogRead(VBAT_PIN); // dummy read
+      batSum = 0; batSamples = 0;
+      batStateStart = now;
+      batState = BAT_ENABLE_WAIT;
+      break;
+
+    case BAT_ENABLE_WAIT:
+      if (now - batStateStart < 10) return;
+      batState = BAT_SAMPLING;
+      break;
+
+    case BAT_SAMPLING:
+      batSum += analogRead(VBAT_PIN);
+      batSamples++;
+      if (batSamples < 16) return;   // come back next loop iteration
+      batState = BAT_DONE;
+      break;
+
+    case BAT_DONE: {
+      #ifdef HAS_VBAT_ENABLE
+        digitalWrite(VBAT_ENABLE, HIGH);
+        pinMode(VBAT_ENABLE, INPUT);
+      #endif
+      uint16_t adc = batSum / 16;
+      float voltage = adc * VBAT_SCALE;
+      uint16_t mv = (uint16_t)(voltage * 1000.0f);
+      static uint16_t filteredMv = 0;
+      if (filteredMv == 0) filteredMv = mv;
+      else filteredMv = (uint16_t)((filteredMv * 7u + mv) / 8u);
+      float v = filteredMv / 1000.0f;
+      if      (v >= BAT_FULL)  batteryPercent = 100;
+      else if (v <= BAT_EMPTY) batteryPercent = 0;
+      else batteryPercent = (uint8_t)((v - BAT_EMPTY) * 100.0f / BAT_RANGE);
+      bat.write8(batteryPercent);
+      sendStatusToPhone();
+      lastBatteryRead = now;
+      batState = BAT_IDLE;
+      break;
+    }
+  }
+}
+
 // ─── Main Loop ───────────────────────────────────────────────────────────────
 void loop() {
   uint32_t now = millis();
@@ -293,17 +369,18 @@ void loop() {
 
   if (now - last_notify >= 750) {
     last_notify = now;
-    if (anyCpmNotifyEnabled()) sendPowerData(target_watts, left_balance * 2);
+
+    if (garmin_conn_hdl != BLE_CONN_HANDLE_INVALID &&
+    Bluefruit.connected(garmin_conn_hdl) &&
+    cpm.notifyEnabled(garmin_conn_hdl))
+      {
+        sendPowerData(target_watts, left_balance * 2);
+      }
   }
 
-  if (now - lastBatteryRead >= 5000) {
-    lastBatteryRead = now;
-    readBatteryVoltage();
-    bat.write8(batteryPercent);
-    sendStatusToPhone();
-  }
+  updateBatteryNonBlocking();
 
-  waitForEvent();
+  // waitForEvent();
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -323,17 +400,21 @@ void sendPowerData(int16_t watts, uint8_t balance_byte) {
   p_data[6] = (uint8_t)((crank_revs >> 8) & 0xFF);
   p_data[7] = (uint8_t)(last_crank_event_time & 0xFF);
   p_data[8] = (uint8_t)((last_crank_event_time >> 8) & 0xFF);
-  for (uint16_t hdl = 0; hdl < BLE_MAX_CONNECTION; hdl++) {
-    if (Bluefruit.connected(hdl) && cpm.notifyEnabled(hdl))
-      cpm.notify(hdl, p_data, 9);
+  if (garmin_conn_hdl != BLE_CONN_HANDLE_INVALID &&
+      Bluefruit.connected(garmin_conn_hdl) &&
+      cpm.notifyEnabled(garmin_conn_hdl))
+  {
+    cpm.notify(garmin_conn_hdl, p_data, 9);
   }
 }
 
 void sendStatusToPhone() {
   uint8_t payload[2] = { batteryPercent, (uint8_t)transportMode };
-  for (uint16_t hdl = 0; hdl < BLE_MAX_CONNECTION; hdl++) {
-    if (Bluefruit.connected(hdl) && androidTx.notifyEnabled(hdl))
-      androidTx.notify(hdl, payload, 2);
+  if (android_conn_hdl != BLE_CONN_HANDLE_INVALID &&
+      Bluefruit.connected(android_conn_hdl) &&
+      androidTx.notifyEnabled(android_conn_hdl))
+  {
+    androidTx.notify(android_conn_hdl, payload, 2);
   }
 }
 
@@ -412,6 +493,18 @@ uint16_t readBatteryVoltage() {
 }
 
 // ─── BLE Setup & Advertising ─────────────────────────────────────────────────
+void onCpcpWrite(uint16_t conn_hdl, BLECharacteristic* chr,
+                 uint8_t* data, uint16_t len) {
+  Serial.printf("CPCP write: len=%d opcode=0x%02X\n", len, data[0]);
+  if (len < 1) return;
+  uint8_t response[3] = { 0x20, data[0], 0x02 };
+  cpcp.indicate(conn_hdl, response, 3);
+}
+
+void onCpcpCccdWrite(uint16_t conn_hdl, BLECharacteristic* chr, uint16_t cccd_value) {
+  Serial.printf("CPCP CCCD written: 0x%04X\n", cccd_value);
+}
+
 void setupCPS() {
   cps.begin();
   csl.setProperties(CHR_PROPS_READ);
@@ -423,28 +516,31 @@ void setupCPS() {
   cpm.setProperties(CHR_PROPS_NOTIFY);
   cpm.setFixedLen(9);
   cpm.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
+  cpm.setCccdWriteCallback(onCpmSubscribe);
   cpm.begin();
   cpcp.setProperties(CHR_PROPS_WRITE | CHR_PROPS_INDICATE);
   cpcp.setPermission(SECMODE_OPEN, SECMODE_OPEN);
-  cpcp.setFixedLen(1);
+  cpcp.setMaxLen(20);
+  cpcp.setCccdWriteCallback(onCpcpCccdWrite);
+  cpcp.setWriteCallback(onCpcpWrite);
   cpcp.begin();
-  cpcp.write8(0x00); 
+
 }
 
 void setupDIS() {
   dis.begin();
-  mfr.setProperties(CHR_PROPS_READ); 
+  mfr.setProperties(CHR_PROPS_READ);
   mfr.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
-  mfr.begin(); 
+  mfr.begin();
   mfr.write("Nilogax");
-  mdl.setProperties(CHR_PROPS_READ); 
+  mdl.setProperties(CHR_PROPS_READ);
   mdl.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
-  mdl.begin(); 
-  mdl.write("SmartBridge");  
-  fwrev.setProperties(CHR_PROPS_READ); 
+  mdl.begin();
+  mdl.write("SmartBridge");
+  fwrev.setProperties(CHR_PROPS_READ);
   fwrev.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
-  fwrev.begin(); 
-  fwrev.write("3.6");
+  fwrev.begin();
+  fwrev.write(FW_VERSION);
 }
 
 void setupBattery() {
@@ -466,6 +562,7 @@ void setupAndroidService() {
   androidTx.setProperties(CHR_PROPS_NOTIFY);
   androidTx.setPermission(SECMODE_OPEN, SECMODE_NO_ACCESS);
   androidTx.setFixedLen(2);
+  androidTx.setCccdWriteCallback(onAndroidTxSubscribe);
   androidTx.begin();
 }
 
@@ -500,14 +597,62 @@ void setStaticAddressFromFICR() {
 }
 
 void connect_callback(uint16_t conn_hdl) {
-  Serial.println("Connected");
+  Serial.print("Connected handle: 0x");
+  Serial.println(conn_hdl, HEX);
+
   lastActivityTime = millis();
+
+  // Restart advertising if we still have free slots
   if (Bluefruit.connected() < 2) Bluefruit.Advertising.start(0);
-  delay(100);
-  sendStatusToPhone();
+
 }
 
-void disconnect_callback(uint16_t conn_hdl, uint8_t reason) {
-  Serial.println("Disconnected");
-  if (currentState == AWAKE) Bluefruit.Advertising.start(0);
+void disconnect_callback(uint16_t conn_hdl, uint8_t reason)
+{
+  Serial.print("Disconnected handle: 0x");
+  Serial.println(conn_hdl, HEX);
+
+  if (conn_hdl == garmin_conn_hdl) {
+    garmin_conn_hdl = BLE_CONN_HANDLE_INVALID;
+    Serial.println("Garmin disconnected");
+  }
+  if (conn_hdl == android_conn_hdl) {
+    android_conn_hdl = BLE_CONN_HANDLE_INVALID;
+    Serial.println("Android app disconnected");
+  }
+
+  if (currentState == AWAKE) {
+    Bluefruit.Advertising.restartOnDisconnect(true);  // re-assert this
+    Bluefruit.Advertising.start(0);
+  }
+}
+
+void onCpmSubscribe(uint16_t conn_hdl, BLECharacteristic* chr, uint16_t cccd_value) {
+  if (cccd_value & BLE_GATT_HVX_NOTIFICATION) {
+
+    garmin_conn_hdl = conn_hdl;
+    Serial.println("→ Identified as GARMIN (subscribed to CPM)");
+
+  } else {
+    // Unsubscribed
+    if (conn_hdl == garmin_conn_hdl) {
+      garmin_conn_hdl = BLE_CONN_HANDLE_INVALID;
+      Serial.println("Garmin unsubscribed from CPM");
+    }
+  }
+}
+
+void onAndroidTxSubscribe(uint16_t conn_hdl, BLECharacteristic* chr, uint16_t cccd_value) {
+  if (cccd_value & BLE_GATT_HVX_NOTIFICATION) {
+
+    android_conn_hdl = conn_hdl;
+    Serial.println("→ Identified as ANDROID APP (subscribed to androidTx)");
+    sendStatusToPhone(); // Now safe to send, handle is valid
+
+  } else {
+    if (conn_hdl == android_conn_hdl) {
+      android_conn_hdl = BLE_CONN_HANDLE_INVALID;
+      Serial.println("Android app unsubscribed");
+    }
+  }
 }
