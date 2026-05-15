@@ -1,0 +1,18 @@
+# XIAO BLE Sense S332 board configuration
+# SPDX-License-Identifier: Apache-2.0
+if BOARD_XIAO_BLE_SENSE_S332
+
+config BOARD
+        default "xiao_ble_sense_s332"
+
+config BT_CTLR
+        default BT
+
+endif # BOARD_XIAO_BLE_SENSE_S332
+
+if USB_DEVICE_STACK
+config UART_CONSOLE
+        default CONSOLE
+config USB_DEVICE_INITIALIZE_AT_BOOT
+        default y
+endif # USB_DEVICE_STACK

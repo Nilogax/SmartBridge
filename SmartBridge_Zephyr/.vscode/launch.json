@@ -1,0 +1,12 @@
+{
+	"version": "0.2.0",
+	"configurations": [
+		{
+			"type": "nrf-connect",
+			"request": "launch",
+			"name": "Launch SmartBridge/build/SmartBridge",
+			"config": "${workspaceFolder}/build/SmartBridge",
+			"runToEntryPoint": "main"
+		}
+	]
+}

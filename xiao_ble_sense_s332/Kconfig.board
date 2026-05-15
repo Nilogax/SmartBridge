@@ -1,0 +1,5 @@
+# XIAO BLE Sense S332 board configuration (ANT+ + BLE)
+# SPDX-License-Identifier: Apache-2.0
+config BOARD_XIAO_BLE_SENSE_S332
+        bool "XIAO BLE Sense S332"
+        depends on SOC_NRF52840_QIAA

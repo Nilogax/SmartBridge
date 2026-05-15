@@ -1,0 +1,11 @@
+mainmenu "SmartBridge"
+
+config SMARTBRIDGE_ANT
+    bool "Enable ANT+ Bicycle Power (requires ANT+ Adopter access)"
+    depends on ANT
+    help
+      Enable ANT+ Bicycle Power transmission alongside BLE.
+      Requires ANT+ Adopter registration at thisisant.com and
+      access to the sdk-ant repository.
+
+source "Kconfig.zephyr"

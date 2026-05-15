@@ -1,0 +1,23 @@
+identifier: xiao_ble_sense_s332
+name: XIAO BLE Sense S332
+type: mcu
+arch: arm
+ram: 256
+flash: 1024
+toolchain:
+  - zephyr
+  - gnuarmemb
+  - xtools
+supported:
+  - adc
+  - ble
+  - ant
+  - counter
+  - gpio
+  - i2c
+  - pwm
+  - spi
+  - usb_cdc
+  - usb_device
+  - watchdog
+vendor: seeed
