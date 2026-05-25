@@ -132,7 +132,7 @@ Alternatively you can build it from the source code using Android Studio:
 
 1. Double tap the tiny reset button by the board's USB socket (labelled RST in the picture below) on the Seeed board to put it into bootloader mode.  <br/> ![Reset](./images/reset_resized.png) <br/>Connect the board to your PC via a USB cable. The PC should recognise the board as a USB storage device and open the top level folder.
 
-1. Copy the `zephyr.uf2` file from your PC onto the board (drag and drop).  The board should restart and all being well it will show a solid green LED and a flashing blue Led.  Windows might show a file error with `Abort/Retry/Cancel` options - this is just the result of the board rebooting as soon as the file is copied and can be ignored (select `Cancel`). 
+1. Copy the `zephyr.uf2` file from your PC onto the board (drag and drop).  The board should restart and all being well it will show a solid green LED and a flashing blue LED.  Windows might show a file error with `Abort/Retry/Cancel` options - this is just the result of the board rebooting as soon as the file is copied and can be ignored (select `Cancel`). 
 
 ## Usage
 
