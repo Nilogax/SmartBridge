@@ -95,7 +95,7 @@ Alternatively you can build it from the source code using Android Studio:
 1. To use ANT+ for this project you must register (free of charge) as an ANT Adopter to gain access to the ANT libraries for the board (the license prevents me from sharing them).  It can take a day or two for your account to be activated but check your junk mail folder as sometimes the messages end up in there.
     - Register for an account at https://www.thisisant.com/register/
     - After a short wait you should be approved as a basic user. Update your account to an ANT Adopter at https://www.thisisant.com/my-ant/
-    - Link your ANT account to your Github account to gain access to the ANT libraries.  Select `Apply for Evaluation License` at the bottom of https://www.thisisant.com/my-ant/
+    - Link your ANT account to your Github account to gain access to the ANT libraries.  Select `Apply for Evaluation License` at the bottom of https://www.thisisant.com/developer/ant/nrf-connect-sdk/ 
 
 1. Download and install Visual Studio Code (VSCode) from https://code.visualstudio.com/
 
@@ -132,7 +132,7 @@ Alternatively you can build it from the source code using Android Studio:
 
 1. Double tap the tiny reset button by the board's USB socket (labelled RST in the picture below) on the Seeed board to put it into bootloader mode.  <br/> ![Reset](./images/reset_resized.png) <br/>Connect the board to your PC via a USB cable. The PC should recognise the board as a USB storage device and open the top level folder.
 
-1. Copy the `zephyr.uf2` file from your PC onto the board (drag and drop).  The board should restart and all being well it will show a solid green LED and a flashing blue LED.
+1. Copy the `zephyr.uf2` file from your PC onto the board (drag and drop).  The board should restart and all being well it will show a solid green LED and a flashing blue Led.  Windows might show a file error with `Abort/Retry/Cancel` options - this is just the result of the board rebooting as soon as the file is copied and can be ignored (select `Cancel`). 
 
 ## Usage
 
