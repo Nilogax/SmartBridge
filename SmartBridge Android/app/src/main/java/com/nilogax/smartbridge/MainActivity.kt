@@ -26,6 +26,9 @@ class MainActivity : AppCompatActivity(), SmartBridgeService.UiListener {
     private lateinit var tvMotorPower: TextView
     private lateinit var tvCadence: TextView
     private lateinit var tvBikeBattery: TextView
+    private lateinit var tvEstimatedRange: TextView
+    private lateinit var seekBarRangeSensitivity: SeekBar
+    private lateinit var tvRangeSensitivityValue: TextView
     private lateinit var tvBikeName: TextView
     private lateinit var tvBridgeName: TextView
     private lateinit var btnBikeAction: Button
@@ -55,6 +58,10 @@ class MainActivity : AppCompatActivity(), SmartBridgeService.UiListener {
             onLoggingStateChanged(service!!.isLogging())
             switchDataEmulator.isChecked = service!!.isDataEmulatorEnabled()
             applyBatteryThreshold()
+            // Restore slider to match whatever sensitivity the bikeManager already loaded
+            val savedSens = service!!.bikeManager.rangeSensitivity
+            seekBarRangeSensitivity.progress = savedSens - 3   // slider 0..17 maps to 3..20
+            updateSensitivityLabel(savedSens)
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -88,10 +95,13 @@ class MainActivity : AppCompatActivity(), SmartBridgeService.UiListener {
             tvMotorPower.text  = "${data.motorPower} W"
             tvCadence.text     = "${data.cadence} RPM"
             tvBikeBattery.text = "${data.batteryPercent}%"
+            tvEstimatedRange.text = data.estimatedRangeKm
+                ?.let { "%d km".format(it) }
+                ?: "— km"
         }
     }
 
-    override fun onRawPacket(timestamp: Long, rawHex: String, label: String, value: Int) {
+    override fun onRawPacket(timestamp: Long, rawHex: String, label: String, messageId: String, value: String) {
         // Logging is handled in the service; UI only displays live data.
     }
 
@@ -108,7 +118,6 @@ class MainActivity : AppCompatActivity(), SmartBridgeService.UiListener {
         }
     }
 
-    // ── Lifecycle ─────────────────────────────────────────────────────────────
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -119,6 +128,7 @@ class MainActivity : AppCompatActivity(), SmartBridgeService.UiListener {
         setupBatterySpinner()
         setupTransportModeButton()
         setupDataEmulatorSwitch()
+        setupRangeSensitivitySlider()
     }
 
     override fun onStart() {
@@ -155,6 +165,9 @@ class MainActivity : AppCompatActivity(), SmartBridgeService.UiListener {
         tvMotorPower   = findViewById(R.id.tvMotorPower)
         tvCadence      = findViewById(R.id.tvCadence)
         tvBikeBattery  = findViewById(R.id.tvBikeBattery)
+        tvEstimatedRange          = findViewById(R.id.tvEstimatedRange)
+        seekBarRangeSensitivity   = findViewById(R.id.seekBarRangeSensitivity)
+        tvRangeSensitivityValue   = findViewById(R.id.tvRangeSensitivityValue)
         tvBikeName     = findViewById(R.id.tvBikeName)
         tvBridgeName   = findViewById(R.id.tvBridgeName)
         btnBikeAction  = findViewById(R.id.btnBikeAction)
@@ -202,7 +215,7 @@ class MainActivity : AppCompatActivity(), SmartBridgeService.UiListener {
         )
 
         btnTransportMode.visibility = if (tvBridgeStatus.text.startsWith("Connected"))  View.VISIBLE
-                                        else View.GONE
+        else View.GONE
     }
 
     private fun setupActionButtons() {
@@ -240,12 +253,11 @@ class MainActivity : AppCompatActivity(), SmartBridgeService.UiListener {
             .show()
     }
 
-    // ── Bike scan ─────────────────────────────────────────────────────────────
     private fun startBikeScan() {
         val manager = service?.bikeManager ?: BoschBikeManager(
             context = this, prefs = prefs,
             onStatusChange = {}, onDataUpdate = {},
-            onRawPacketReceived = { _, _, _, _ -> }
+            onRawPacketReceived = { _, _, _, _, _ -> }
         )
 
         val foundDevices = mutableListOf<BluetoothDevice>()
@@ -326,15 +338,15 @@ class MainActivity : AppCompatActivity(), SmartBridgeService.UiListener {
         dialog.show()
     }
 
-    // ── Logging ───────────────────────────────────────────────────────────────
+
     private fun setupLoggingButton() {
         btnToggleLogging.setOnClickListener {
             val svc = service ?: return@setOnClickListener
             if (!isLoggingEnabled) {
-                if (!svc.bikeManager.isConnected) {
+                /*if (!svc.bikeManager.isConnected) {
                     Toast.makeText(this, "Connect bike first", Toast.LENGTH_SHORT).show()
                     return@setOnClickListener
-                }
+                }*/
                 svc.startLogging()
                 Toast.makeText(this, "Logging started in background...", Toast.LENGTH_SHORT).show()
             } else {
@@ -344,7 +356,7 @@ class MainActivity : AppCompatActivity(), SmartBridgeService.UiListener {
     }
 
 
-    // ── Battery spinner ───────────────────────────────────────────────────────
+
     private fun setupBatterySpinner() {
         val options = arrayOf("Off", "5%", "10%")
         spinnerBattery.adapter = ArrayAdapter(this, R.layout.spinner_item, options)
@@ -394,6 +406,28 @@ class MainActivity : AppCompatActivity(), SmartBridgeService.UiListener {
                 Toast.LENGTH_SHORT
             ).show()
         }
+    }
+
+    private fun setupRangeSensitivitySlider() {
+        // SeekBar max=17 → values 3..20 (progress+3)
+        val saved = prefs.getInt("range_sensitivity", 10)
+        seekBarRangeSensitivity.progress = (saved - 3).coerceIn(0, 17)
+        updateSensitivityLabel(saved)
+
+        seekBarRangeSensitivity.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(bar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
+                val sensitivity = progress + 3   // 3..20
+                updateSensitivityLabel(sensitivity)
+                prefs.edit().putInt("range_sensitivity", sensitivity).apply()
+                service?.bikeManager?.rangeSensitivity = sensitivity
+            }
+            override fun onStartTrackingTouch(bar: android.widget.SeekBar?) {}
+            override fun onStopTrackingTouch(bar: android.widget.SeekBar?) {}
+        })
+    }
+
+    private fun updateSensitivityLabel(sensitivity: Int) {
+        tvRangeSensitivityValue.text = "Last $sensitivity"
     }
 
     private fun applyBatteryThreshold() {

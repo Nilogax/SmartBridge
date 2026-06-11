@@ -18,6 +18,7 @@
 
 #ifdef CONFIG_SMARTBRIDGE_ANT
 #include "ant_bpwr.h"
+#include "ant_lev.h"
 #endif
 
 #define FW_VERSION_STR   STRINGIFY(FW_VERSION_MAJOR) "." \
@@ -37,6 +38,7 @@ static const struct device *i2c_imu = DEVICE_DT_GET(DT_BUS(IMU_NODE));
 static const struct gpio_dt_spec imu_int1 =
     GPIO_DT_SPEC_GET(IMU_NODE, irq_gpios);
 
+static K_SEM_DEFINE(sleep_wake_sem, 0, 1);
 static struct k_work save_transport_work;
 static struct k_work imu_int_work;
 
@@ -97,6 +99,11 @@ static uint32_t last_crank_advance    = 0;
 static volatile uint16_t target_cadence = 0;
 static volatile int16_t  target_watts   = 0;
 static volatile uint8_t  left_balance   = 100;
+static volatile uint8_t  target_bikebattery = 100;
+static volatile uint8_t  target_assist = 0;
+static volatile uint32_t target_odometer  = 0;   /* 0.01 km units, 24-bit  */
+static volatile uint16_t target_speed     = 0;   /* 0.1 km/h units, 12-bit */
+static volatile uint16_t target_range_km  = 0;   /* whole km; 0 = unknown  */
 
 /* ─────────────────────────────────────────────────────────────── */
 /* BATTERY STATE                                                   */
@@ -106,8 +113,8 @@ static uint8_t  battery_percent = 0;
 static uint32_t last_batt_read  = 0;
 
 /* LiPo discharge curve endpoints */
-#define BAT_FULL    4.10f
-#define BAT_EMPTY   3.30f
+#define BAT_FULL    4.01f
+#define BAT_EMPTY   3.63f  // Values modified to align with ADC readings vs measured voltage
 #define BAT_RANGE   (BAT_FULL - BAT_EMPTY)
 
 #define BAT_EXT_DIV         1.15f
@@ -216,32 +223,62 @@ static ssize_t android_rx_write(struct bt_conn *conn,
                                 const void *buf, uint16_t len,
                                 uint16_t offset, uint8_t flags)
 {
-    if (len < 6) return len;
+    /*
+     * Packet layout (15 bytes, type 0x01):
+     *  [0]     type
+     *  [1-2]   watts LE
+     *  [3]     cadence
+     *  [4]     leftBalance
+     *  [5]     batteryPercent
+     *  [6]     assistMode
+     *  [7-9]   odometer (0.01 km, 24-bit LE)
+     *  [10-11] speed (0.1 km/h, 12-bit LE; bits 11-8 in low nibble of [11])
+     *  [12-13] remaining range (km, 12-bit LE; bits 11-8 in low nibble of [13])
+     *  [14]    XOR checksum of [0]..[13]
+     *
+     * Backwards-compatible: the legacy 8-byte packet is still accepted.
+     */
+    if (len < 8) return len;
 
     const uint8_t *d = buf;
+
+    /* Verify checksum over all payload bytes except the last */
     uint8_t chk = 0;
-    for (int i = 0; i < 5; i++) chk ^= d[i];
-    if (chk != d[5]) return len;
+    for (uint16_t i = 0; i < len - 1u; i++) chk ^= d[i];
+    if (chk != d[len - 1u]) return len;
 
     if (d[0] == PKT_POWER_CAD_BAL) {
-        int16_t watts   = (int16_t)(d[1] | (d[2] << 8));
+        int16_t watts   = (int16_t)((uint16_t)d[1] | ((uint16_t)d[2] << 8));
         uint8_t cadence = d[3];
         uint8_t balance = d[4];
+        uint8_t bikebattery = d[5];
+        uint8_t assist = d[6];
 
         if (watts   < 0)    watts   = 0;
         if (watts   > 2500) watts   = 2500;
         if (cadence > 200)  cadence = 200;
         if (balance > 100)  balance = 100;
+        if (bikebattery > 100)  bikebattery = 100;
 
         target_watts   = watts;
         target_cadence = cadence;
         left_balance   = balance;
+        target_bikebattery = bikebattery;
+        target_assist = assist;
+
+        /* Extended LEV fields — only present in the 15-byte packet */
+        if (len >= 15u) {
+            target_odometer = (uint32_t)d[7]
+                            | ((uint32_t)d[8]  << 8)
+                            | ((uint32_t)d[9]  << 16);
+            target_speed    = (uint16_t)d[10]
+                            | ((uint16_t)(d[11] & 0x0Fu) << 8);
+            target_range_km = (uint16_t)d[12]
+                            | ((uint16_t)(d[13] & 0x0Fu) << 8);
+        }
 
         if (watts > 0 || cadence > 0)
             last_activity_time = k_uptime_get_32();
-
-        /*printk("Received from Android: %dW, cadence %d, balance %d%%\n",
-               target_watts, target_cadence, left_balance);*/
 
     } else if (d[0] == PKT_TRANSPORT_MODE) {
         transport_mode = (d[1] != 0);
@@ -591,7 +628,7 @@ static void configure_imu_for_state(void)
         printk("IMU: Transport sleep (firm taps)\n");
     } else {
         imu_write(REG_TAP_CFG1,    0x81);
-        imu_write(REG_WAKE_UP_THS, 0x09);
+        imu_write(REG_WAKE_UP_THS, 0x08);
         imu_write(REG_WAKE_UP_DUR, 0x01);
         imu_write(REG_MD1_CFG,     0x20);
         printk("IMU: Normal sleep (any movement)\n");
@@ -620,8 +657,12 @@ static void imu_int_work_handler(struct k_work *work)
         } else {
             tap_count++;
         }
+        if (tap_count >= TAP_WAKE_COUNT) {
+            k_sem_give(&sleep_wake_sem);
+        }
     } else if (current_state == SLEEP_NORMAL) {
         wake_requested = true;
+        k_sem_give(&sleep_wake_sem);
     }
 }
 
@@ -656,7 +697,7 @@ static void update_crank(void)
 }
 
 /* ─────────────────────────────────────────────────────────────── */
-/* BATTERY — raw SAADC read                                        */
+/* BATTERY                                                         */
 /* ─────────────────────────────────────────────────────────────── */
 
 static bool batt_adc_ready = false;
@@ -693,8 +734,8 @@ static void read_battery_now(void)
 
     /* Enable voltage divider */
     if (device_is_ready(vbat_en.port)) {
-        gpio_pin_set_dt(&vbat_en, 0);   // ACTIVE_LOW → ON
-        k_msleep(8);                    // Give it time to settle
+        gpio_pin_set_dt(&vbat_en, 0);
+        k_msleep(8);
     }
 
     int16_t raw = 0;
@@ -720,10 +761,16 @@ static void read_battery_now(void)
     int32_t vbat_mv = (int32_t)(raw * BAT_ADC_MV_PER_LSB);
     float   vbat    = vbat_mv / 1000.0f;
 
-    /* Simple filtering */
+    /* Simple filtering — fast response when voltage rises (charging),
+     * slow when discharging to reject noise and short-term load spikes. */
     static float filtered_v = 0.0f;
-    if (filtered_v == 0.0f) filtered_v = vbat;
-    else filtered_v = filtered_v * 0.875f + vbat * 0.125f;
+    if (filtered_v == 0.0f) {
+        filtered_v = vbat;   /* seed on first reading */
+    } else if (vbat > filtered_v) {
+        filtered_v = filtered_v * 0.5f + vbat * 0.5f;   /* fast on charge */
+    } else {
+        filtered_v = filtered_v * 0.875f + vbat * 0.125f; /* slow on discharge */
+    }
 
     if (filtered_v >= BAT_FULL)       battery_percent = 100;
     else if (filtered_v <= BAT_EMPTY) battery_percent = 0;
@@ -778,8 +825,6 @@ static void send_status_to_phone(void)
     uint8_t payload[2] = { battery_percent, (uint8_t)transport_mode };
     bt_gatt_notify(android_conn, &android_svc.attrs[4], payload, sizeof(payload));
 
-    /* printk("Notified Android: battery %d%%, transport mode %s\n",
-           battery_percent, transport_mode ? "ON" : "OFF"); */
 }
 
 /* ─────────────────────────────────────────────────────────────── */
@@ -793,6 +838,7 @@ static void enter_sleep(void)
     bt_le_adv_stop();
     #ifdef CONFIG_SMARTBRIDGE_ANT
         ant_bpwr_stop();
+        ant_lev_stop();
     #endif
 
     if (garmin_conn)  { bt_conn_disconnect(garmin_conn,  BT_HCI_ERR_REMOTE_USER_TERM_CONN); }
@@ -808,9 +854,13 @@ static void enter_sleep(void)
     wake_requested = false;
     tap_count      = 0;
     first_tap_time = 0;
+    k_sem_reset(&sleep_wake_sem);
 
     while (current_state != AWAKE) {
-        k_sleep(K_MSEC(50));
+        /* Block indefinitely until the IMU work handler posts the semaphore.
+         * The CPU enters WFI (wait-for-interrupt) inside k_sem_take, drawing
+         * only ~3-4 µA */
+        k_sem_take(&sleep_wake_sem, K_FOREVER);
 
         if (wake_requested) {
             printk(">>> MOVEMENT - waking normal sleep\n");
@@ -840,6 +890,7 @@ static void wake_up(void)
     }
     #ifdef CONFIG_SMARTBRIDGE_ANT
         ant_bpwr_start();
+        ant_lev_start();
     #endif
 
     printk(">>> DEVICE AWAKE\n");
@@ -966,8 +1017,6 @@ int main(void)
         last_batt_read = k_uptime_get_32();
     }
 
-    /* ── Bluetooth ── */
-
     set_address_from_ficr();
 
     int err = bt_enable(NULL);
@@ -992,6 +1041,7 @@ int main(void)
     #ifdef CONFIG_SMARTBRIDGE_ANT
         err = ant_bpwr_setup();
         if (err) printk("ANT setup failed (err %d)\n", err);
+        ant_lev_setup();
     #endif
 
     k_work_init(&save_transport_work, save_transport_work_handler);
@@ -1007,13 +1057,11 @@ int main(void)
     while (1) {
         uint32_t now = k_uptime_get_32();
 
-        /* ── Crank simulation ── */
         if (now - last_crank_update >= 10) {
             update_crank();
             last_crank_update = now;
         }
 
-        /* ── Sleep timeout ── */
         if (current_state == AWAKE &&
             now > last_activity_time &&
             (now - last_activity_time > SLEEP_TIMEOUT_MS)) {
@@ -1043,16 +1091,19 @@ int main(void)
         if (now - last_ble_notify >= 750) {
             last_ble_notify = now;
             send_power();
-            #ifdef CONFIG_SMARTBRIDGE_ANT
-                ant_bpwr_update(target_watts, target_cadence, left_balance);
-            #endif
         }
 
         #ifdef CONFIG_SMARTBRIDGE_ANT
-            /* ── ANT Power notification to Garmin (250 ms) ── */
+            /* ── ANT Power & notification to Garmin (250 ms) ── */
             if (now - last_ant_update >= 250) {
                 last_ant_update = now;
                 ant_bpwr_update(target_watts, target_cadence, left_balance);
+                float assist_pct = 1.0f - (float)left_balance / 100.0f;
+                uint8_t assist_val = (uint8_t)(assist_pct * 100.0f);
+                if (assist_val > 100u) assist_val = 100u;
+
+                ant_lev_update(target_bikebattery, target_assist, assist_val,
+                               target_odometer, target_speed, target_range_km);
             }
         #endif
 

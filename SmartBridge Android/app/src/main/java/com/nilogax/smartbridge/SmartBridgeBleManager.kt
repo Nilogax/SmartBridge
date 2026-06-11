@@ -26,7 +26,12 @@ enum class BleState { IDLE, SCANNING, CONNECTING, CONNECTED, DISCONNECTED, ERROR
 data class RideData(
     val watts: Int = 0,
     val cadence: Int = 0,
-    val leftBalance: Int = 100
+    val leftBalance: Int = 100,
+    val batteryPercent: Int = 100,
+    val assistMode: Int = 0,
+    val odometerCm: Int = 0,      // 0.01 km units
+    val speedDmkh: Int = 0,       // 0.1 km/h
+    val remainingRangeKm: Int = 0 // whole km
 )
 
 class SmartBridgeBleManager(
@@ -60,8 +65,6 @@ class SmartBridgeBleManager(
     var transportMode: Boolean = false
         private set
 
-    private var lastStatusBytes: ByteArray? = null
-
     fun hasPermissions(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED &&
@@ -71,7 +74,6 @@ class SmartBridgeBleManager(
         }
     }
 
-    // ── Scanning ──────────────────────────────────────────────────────────────
     fun startScan(onDeviceFound: (BluetoothDevice) -> Unit) {
         if (!hasPermissions()) {
             onStateChange(BleState.ERROR, "Missing BLE permissions")
@@ -321,11 +323,21 @@ class SmartBridgeBleManager(
         onStateChange(BleState.CONNECTED, statusText)
     }
 
-    fun updateData(watts: Int, cadence: Int, leftBalance: Int) {
+    fun updateData(watts: Int, cadence: Int, leftBalance: Int, batteryPercent: Int, assistMode: Int,
+                   odometerMetres: Int = 0, speedHundredthsKmh: Int = 0, remainingRangeKm: Int = 0) {
         currentData = RideData(
             watts.coerceIn(0, 2500),
             cadence.coerceIn(0, 200),
-            leftBalance.coerceIn(0, 100)
+            leftBalance.coerceIn(0, 100),
+            batteryPercent.coerceIn(0, 100),
+            assistMode.coerceIn(0, 4),
+            // Convert to ANT LEV units:
+            //   odometer: metres → 0.01 km  (÷10), capped at 24-bit max
+            //   speed:    0.01 km/h → 0.1 km/h (÷10), capped at 12-bit max (0xFFF)
+            //   range:    whole km, capped at 12-bit max (0xFFE; 0xFFF = unknown in some impls)
+            odometerCm        = (odometerMetres / 10).coerceIn(0, 0xFFFFFF),
+            speedDmkh         = (speedHundredthsKmh / 10).coerceIn(0, 0xFFF),
+            remainingRangeKm  = remainingRangeKm.coerceIn(0, 4094)
         )
     }
 
@@ -353,13 +365,46 @@ class SmartBridgeBleManager(
 
         lastSentData = d
 
-        val pkt = ByteArray(6).also {
-            it[0] = 0x01
-            it[1] = (d.watts and 0xFF).toByte()
-            it[2] = ((d.watts shr 8) and 0xFF).toByte()
-            it[3] = d.cadence.toByte()
-            it[4] = d.leftBalance.toByte()
-            it[5] = (it[0].toInt() xor it[1].toInt() xor it[2].toInt() xor it[3].toInt() xor it[4].toInt()).toByte()
+        /*
+         * Packet layout (15 bytes):
+         *  [0]     0x01  type
+         *  [1-2]   watts LE
+         *  [3]     cadence
+         *  [4]     leftBalance
+         *  [5]     batteryPercent
+         *  [6]     assistMode
+         *  [7-9]   odometer (0.01 km units, 24-bit LE)
+         *  [10-11] speed (0.1 km/h units, 12-bit LE – bits 11-8 in low nibble of [11])
+         *  [12-13] remaining range (whole km, 12-bit LE – bits 11-8 in low nibble of [13])
+         *  [14]    XOR checksum of [0]..[13]
+         */
+        val odo0 = (d.odometerCm and 0xFF).toByte()
+        val odo1 = ((d.odometerCm shr 8) and 0xFF).toByte()
+        val odo2 = ((d.odometerCm shr 16) and 0xFF).toByte()
+        val spd0 = (d.speedDmkh and 0xFF).toByte()
+        val spd1 = ((d.speedDmkh shr 8) and 0x0F).toByte()
+        val rng0 = (d.remainingRangeKm and 0xFF).toByte()
+        val rng1 = ((d.remainingRangeKm shr 8) and 0x0F).toByte()
+
+        val pkt = ByteArray(15).also {
+            it[0]  = 0x01
+            it[1]  = (d.watts and 0xFF).toByte()
+            it[2]  = ((d.watts shr 8) and 0xFF).toByte()
+            it[3]  = d.cadence.toByte()
+            it[4]  = d.leftBalance.toByte()
+            it[5]  = d.batteryPercent.toByte()
+            it[6]  = d.assistMode.toByte()
+            it[7]  = odo0
+            it[8]  = odo1
+            it[9]  = odo2
+            it[10] = spd0
+            it[11] = spd1
+            it[12] = rng0
+            it[13] = rng1
+            it[14] = (it[0].toInt() xor it[1].toInt() xor it[2].toInt() xor it[3].toInt()
+                    xor it[4].toInt() xor it[5].toInt() xor it[6].toInt() xor it[7].toInt()
+                    xor it[8].toInt() xor it[9].toInt() xor it[10].toInt() xor it[11].toInt()
+                    xor it[12].toInt() xor it[13].toInt()).toByte()
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

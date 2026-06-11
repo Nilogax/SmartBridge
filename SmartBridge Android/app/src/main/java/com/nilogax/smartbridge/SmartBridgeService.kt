@@ -45,7 +45,7 @@ class SmartBridgeService : Service() {
         fun onBikeStatusChanged(status: String)
         fun onBridgeStatusChanged(status: String)
         fun onRideDataChanged(data: BoschRideData)
-        fun onRawPacket(timestamp: Long, rawHex: String, label: String, value: Int)
+        fun onRawPacket(timestamp: Long, rawHex: String, label: String, messageId: String, value: String)
         fun onLogSaved(fileName: String)
         fun onLoggingStateChanged(isLogging: Boolean)
     }
@@ -101,13 +101,19 @@ class SmartBridgeService : Service() {
                 bridgeManager.updateData(
                     data.riderPower,
                     data.cadence,
-                    calculateRiderBalance(data.riderPower, data.motorPower)
+                    calculateRiderBalance(data.riderPower, data.motorPower),
+                    data.batteryPercent,
+                    data.assistMode,
+                    odometerMetres      = data.odometerMetres,
+                    speedHundredthsKmh  = data.speedHundredthsKmh,
+                    remainingRangeKm    = data.estimatedRangeKm ?: 0
                 )
             },
-            onRawPacketReceived = { ts, hex, label, value ->
-                listener?.onRawPacket(ts, hex, label, value)   // still update UI if open
+            onRawPacketReceived = { ts, hex, label, messageId, value ->
+                listener?.onRawPacket(ts, hex, label, messageId, value)
                 if (isLoggingEnabled) {
-                    logBuilder?.append("$ts,$hex,$label,$value\n")
+                    val msgIdStr = "0x" + messageId
+                    logBuilder?.append("$ts,$hex,$label,$msgIdStr,$value\n")
                 }
             }
         )
@@ -204,7 +210,7 @@ class SmartBridgeService : Service() {
 
     private fun calculateRiderBalance(riderPower: Int, motorPower: Int): Int {
         val total = riderPower + motorPower
-        return if ((total > 0) && (riderPower > 0)) (riderPower * 100 / total) else 100
+        return if (riderPower > 0) (riderPower * 100 / total) else 100
     }
 
     private fun hasBluetoothPermissions(): Boolean {
@@ -215,7 +221,6 @@ class SmartBridgeService : Service() {
         }
     }
 
-    // ── Notification ──────────────────────────────────────────────────────────
     private fun buildNotification(): Notification {
         val tapIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -228,7 +233,7 @@ class SmartBridgeService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("SmartBridge Active")
             .setContentText("Bridge: $bridgeStatus")
-            .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
+            .setSmallIcon(R.drawable.ic_notification_logo)
             .setOngoing(true)
             .setContentIntent(pendingIntent)
             .setSilent(true)
@@ -274,13 +279,13 @@ class SmartBridgeService : Service() {
 
     fun startLogging() {
         if (isLoggingEnabled) return
-        if (!bikeManager.isConnected) {
+        /*if (!bikeManager.isConnected) {
             Log.w(TAG, "Cannot start logging - bike not connected")
             return
-        }
+        }*/
 
         isLoggingEnabled = true
-        logBuilder = StringBuilder("timestamp,raw_hex,label,value\n")
+        logBuilder = StringBuilder("timestamp,raw_hex,label,message_id,value\n")
         Log.i(TAG, "Logging started (service)")
         listener?.onLoggingStateChanged(true)
 
@@ -352,7 +357,7 @@ class SmartBridgeService : Service() {
         )
 
         val notification = NotificationCompat.Builder(this, LOG_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_notify_more)
+            .setSmallIcon(R.drawable.ic_notification_logo)
             .setContentTitle("SmartBridge log saved")
             .setContentText(fileName)
             .setAutoCancel(true)
@@ -460,7 +465,8 @@ class SmartBridgeService : Service() {
                     riderPower = rider,
                     motorPower = motor,
                     cadence = cadence,
-                    batteryPercent = 100
+                    batteryPercent = 100-cadence,
+                    assistMode = cadence % 5
                 )
 
                 lastRideData = data
@@ -468,7 +474,9 @@ class SmartBridgeService : Service() {
                 bridgeManager.updateData(
                     data.riderPower,
                     data.cadence,
-                    calculateRiderBalance(data.riderPower, data.motorPower)
+                    calculateRiderBalance(data.riderPower, data.motorPower),
+                    data.batteryPercent,
+                    data.assistMode
                 )
 
                 emulatorHandler.postDelayed(this, 750L)
@@ -489,14 +497,17 @@ class SmartBridgeService : Service() {
                 riderPower = 0,
                 motorPower = 0,
                 cadence = 0,
-                batteryPercent = lastRideData?.batteryPercent ?: 100
+                batteryPercent = 100,
+                assistMode = 0
             )
             lastRideData = zero
             listener?.onRideDataChanged(zero)
             bridgeManager.updateData(
                 zero.riderPower,
                 zero.cadence,
-                calculateRiderBalance(zero.riderPower, zero.motorPower)
+                calculateRiderBalance(zero.riderPower, zero.motorPower),
+                zero.batteryPercent,
+                zero.assistMode
             )
         }
     }

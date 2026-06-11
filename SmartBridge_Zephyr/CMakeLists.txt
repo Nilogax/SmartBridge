@@ -7,4 +7,5 @@ target_sources(app PRIVATE src/main.c)
 
 if(CONFIG_SMARTBRIDGE_ANT)
   target_sources(app PRIVATE src/ant_bpwr.c)
+  target_sources(app PRIVATE src/ant_lev.c)
 endif()
