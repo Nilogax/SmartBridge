@@ -238,7 +238,7 @@ static ssize_t android_rx_write(struct bt_conn *conn,
      *
      * Backwards-compatible: the legacy 8-byte packet is still accepted.
      */
-    if (len < 8) return len;
+    if (len < 6) return len;
 
     const uint8_t *d = buf;
 
@@ -282,6 +282,7 @@ static ssize_t android_rx_write(struct bt_conn *conn,
 
     } else if (d[0] == PKT_TRANSPORT_MODE) {
         transport_mode = (d[1] != 0);
+        printk("Transport mode: %s\n", transport_mode ? "ON" : "OFF");
         save_transport_mode();
         set_leds();
         send_status_to_phone();

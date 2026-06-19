@@ -10,9 +10,9 @@ A project to enable Bosch ebikes to send power data to Garmin devices via an And
 
 Like many other Bosch ebike owners I was disappointed that the ebike didn't link to my Garmin, this project addresses that.  It needs a small amount of extra hardware (total cost in the UK from around £30-£40) but there is minimal (if any) soldering and full instructions are provided below.
 
-The SmartBridge Android app reads rider power, motor power, cadence, battery level and assist mode from the bike.  Data is then sent to the nRF52840 board running the SmartBridge firmware which acts as a bridge to send the data on to the Garmin by emulating a power sensor over both Bluetooth and ANT+ and a LEV (ebike) over ANT+.
+The SmartBridge Android app reads rider power, motor power, cadence, battery level and assist mode from the bike.  Data is then sent to the nRF52840 board running the SmartBridge firmware which acts as a bridge to send the data on to the Garmin by emulating a power sensor over both Bluetooth and ANT+ and a LEV (eBike) over ANT+.
 
-The standard power sensor protocol for both Bluetooth and ANT+ doesn't allow both rider and motor power to be sent so it sends the rider power as the 'Power' level and uses the left/right balance field to show the relative contribution of rider and motor.  The LEV (ebike) sensor includes the bike's battery level, the current assist mode, the bike's speed and distance covered as well as an estimate of the remaining battery range.  Bike battery status alerts can also be sent as phone notifications at configurable intervals.
+The standard power sensor protocol for both Bluetooth and ANT+ doesn't allow both rider and motor power to be sent so it sends the rider power as the 'Power' level and uses the left/right balance field to show the relative contribution of rider and motor.  The LEV (eBike) sensor includes the bike's battery level, the current assist mode, the bike's speed and distance covered as well as an estimate of the remaining battery range.  Bike battery status alerts can also be sent as phone notifications at configurable intervals.
 
 It *should* be compatible with any Bosch Smart System ebike as they all use the same displays, so it makes sense that they use the same communications protocol.  It *might* work on other Bosch ebikes but that's untested as yet and would need someone to supply appropriate logs to decode.  Similarly other GPS units will likely use the standard power sensor protocols so this *should* work with them too, but that's also untested.
 
@@ -40,7 +40,7 @@ You will need:
 
 - an nRF52840 board.  I have used a "Seeed XIAO nRF52840 Sense" board because it has a built in motion sensor so the board can power down when it's not being used without the need for a switch.  The Adafruit Feather nRF52840 Sense board should also support the code but the code would need some reconfiguration for things like LED behaviour and battery voltage calculation.
 
-- a case.  My board came in a neat 35mm x 20mm padded screw top case which is perfect for my plan to carry it in my pack.  If you want to mount it to the bike then something more waterproof would be needed.
+- a case.  My board came in a neat 35mm x 20mm padded screw top case which is perfect for my plan to carry it in my pack.  If you want to mount it to the bike then something more waterproof would be needed.  If you have access to a 3D printer then @SurfingSpider has designed a case for the board which is available [here](https://www.printables.com/model/1757638-smartbridge-case-bosch-ebike-data-to-garmin-device)
 
 - a power source.  This can either be a battery (preferred) or power via the USB-C port.
     - Battery Option.  The nRF52840 is a low power device so you don't need a huge battery.  A 3.7V 150mAh LiPo battery should last for about 5-10 hours of riding and the Seeed board has a built in charging circuit so you can recharge the battery by plugging a USB-C power source into the board.  A larger capacity battery will obviously mean less recharging but make sure it will fit in your case.
@@ -90,7 +90,7 @@ Alternatively you can build it from the source code using Android Studio:
 
 1. Build and install the SmartBridge app.  In Android Studio choose `Run/Run app`.  Android Studio will then build the SmartBridge app, install it on your phone and activate it.
 
-### SmartBridge board firmware
+### SmartBridge board firmware first build
 
 1. If you do not want to use the ANT+ capabilities of the board you can download the `zephyr.uf2` file from the [latest release](https://github.com/Nilogax/SmartBridge/releases) onto your PC, then skip to the last two steps of this section to flash it onto the board.
 
@@ -135,6 +135,18 @@ Alternatively you can build it from the source code using Android Studio:
 1. Copy the `zephyr.uf2` file from your PC onto the board (drag and drop).  As soon as the file is uploaded the board will restart and disconnect from the PC.  All being well it will show a solid green LED and a flashing blue LED.  Windows might show a file error with `Try Again/Skip/Cancel` options - this is just the result of the board restarting as soon as the file is copied and can be ignored (select `Cancel`).
 
 ![Warning](./images/warning.png)
+
+### SmartBridge board firmware update
+
+Once you've completed the first build of the board there are fewer steps needed to apply any update.
+
+1.  Copy the files from the `SmartBridge_Zephyr` folder of the new release into the `SmartBridge_Zephyr` folder that you used for the last build.
+
+1.  In the nRF Connect extension of VS Code, under the `WELCOME` panel select `Open an existing application` and navigate to your previous SmartBridge project folder.
+
+1.  In the nRF Connect extension, under `ACTIONS` select `Build`.  This will rebuild the code using the last build configuration (ANT+ or BLE as defined above).
+
+1.  Double tap the board's reset button, connect it via USB and copy the `zephyr.uf2` file onto the board.  See above for more detail on these steps if necessary.  You may see the file system warning message again when the board restarts, just select `Cancel` as before.
 
 ## Usage
 
@@ -192,14 +204,28 @@ If something stops working you can reboot the bridge by either disconnecting and
 
 ### Adding the power meter and LEV sensors to your Garmin
 
-Once your bridge is powered up you should add it to your Garmin.  The procedure for this will depend on your particular GPS model.  If you're using ANT+ the power sensor will have a numerical ID, and the Bluetooth sensor will be called `SmartBridge_xxxx`.  The LEV sensor will show as an `Ebike` sensor with a numerical ID similar to the power sensor.  I'd recommend using the ANT+ option if you can.  Once you have connected the sensors you can add the data fields to your display in the usual way.
+Once your bridge is powered up you should add it to your Garmin.  The procedure for this will depend on your particular GPS model.  If you're using ANT+ the power sensor will have a numerical ID, and the Bluetooth sensor will be called `SmartBridge_xxxx`.  The LEV sensor will show as an `eBike` sensor with a numerical ID similar to the power sensor.  I'd recommend using the ANT+ option if you can.  Once you have connected the sensors you can add the data fields to your display in the usual way.  The table below shows the data fields that are available.
 
-If you connect the LEV (Ebike) sensor then the speed and distance shown on your Garmin will be the values that are sent by the bike rather than from the Garmin's GPS tracking.  Experience suggests that the bike's distance measurement will be slightly higher than the GPS figure as the bike figure is based on wheel rotations so it captures your full track over the ground whereas GPS data is a sum of the straight line distance between each position recorded.
+| Data Field Name | Garmin Category | Availability | Sensor | Description |
+| ----------------|---------------|----------|----------|----|
+| Power | Power | ANT+/BLE | Power | Rider pedalling power |
+| Balance | Power | ANT+/BLE | Power |The % contribution to total system power from the rider (Left) and motor (Right) |
+| Cadence | Cadence | ANT+/BLE | Power| Pedal RPM |
+| Speed | Speed | ANT+ Only | eBike |Speed read from motor's wheel sensor |
+| Distance | Distance | ANT+ Only | eBike | Distance read from motor's wheel sensor |
+| eBike Battery | eBike | ANT+ Only | eBike | Bike's current battery charge % |
+| Assist Mode | eBike | ANT+ Only | eBike | The current assist mode encoded as 0-4 where 0 is off and 4 is your highest configured assist level |
+| Travel Range | eBike | ANT+ Only | eBike | Estimated remaining distance before battery is depleted |
+
+If you connect the eBike (LEV) sensor then the speed and distance shown on your Garmin will be the values that are sent by the bike rather than from the Garmin's GPS tracking.  Experience suggests that the bike's distance measurement will be slightly higher than the GPS figure as the bike figure is based on wheel rotations so it captures your full track over the ground whereas GPS data is a sum of the straight line distance between each position recorded.  You can modify the bike's wheel circumference in the Flow app if necessary.
 
 ## Release History
 
 Distributed under the GPL-2.0 license. See ``LICENSE`` for more information.
 
+* 0.9.5 (18/6/2026)
+    * Fix transport mode bug on board
+    * No change to Android app
 * 0.9.4 (11/6/2026)
     * Add ANT+ LEV sensor and associated data
     * Improve board's power consumption in sleep mode
