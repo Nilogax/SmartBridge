@@ -16,6 +16,8 @@ The standard power sensor protocol for both Bluetooth and ANT+ doesn't allow bot
 
 It *should* be compatible with any Bosch Smart System ebike as they all use the same displays, so it makes sense that they use the same communications protocol.  It *might* work on other Bosch ebikes but that's untested as yet and would need someone to supply appropriate logs to decode.  Similarly other GPS units will likely use the standard power sensor protocols so this *should* work with them too, but that's also untested.
 
+This project does not use the new LDI protocol as that is missing some key data needed for the app.  Instead it reads the data that is shared between the bike and the Flow app as that is much richer.
+
 This is still very much a beta project.  I welcome feedback on how easy you found it to follow these instructions on building the solution, hardware sources in other countries, your success (or otherwise) with using it on other configurations or any issues you find in use.  There is an open [Feedback](https://github.com/Nilogax/SmartBridge/discussions/2) discussion topic here on Github or post to [this thread](https://www.emtbforums.com/threads/project-to-enable-bosch-garmin-integration.37793/) on the EMTB forum.
 
 At present the list of known working configurations is:
