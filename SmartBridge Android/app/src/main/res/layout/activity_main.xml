@@ -290,87 +290,155 @@
                             </LinearLayout>
                         </LinearLayout>
 
-                        <!-- Range Sensitivity -->
+                        <!-- Range History -->
                         <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:orientation="vertical"
                             android:layout_marginTop="16dp">
 
-                            <LinearLayout
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Range History"
+                                android:textColor="?attr/colorOnSurface"
+                                android:textSize="13sp"
+                                android:textStyle="bold" />
+
+                            <RadioGroup
+                                android:id="@+id/rgRangeHistory"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:orientation="horizontal"
-                                android:gravity="center_vertical">
+                                android:layout_marginTop="6dp">
 
-                                <TextView
+                                <RadioButton
+                                    android:id="@+id/rb5km"
                                     android:layout_width="0dp"
                                     android:layout_height="wrap_content"
                                     android:layout_weight="1"
-                                    android:text="Range History"
-                                    android:textColor="?attr/colorOnSurface"
+                                    android:text="5 km"
                                     android:textSize="13sp"
-                                    android:textStyle="bold" />
+                                    android:textColor="?attr/colorOnSurface" />
 
-                                <TextView
-                                    android:id="@+id/tvRangeSensitivityValue"
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:text="Last 10"
-                                    android:textColor="?attr/colorOnSurface"
-                                    android:textSize="13sp" />
-                            </LinearLayout>
-
-                            <SeekBar
-                                android:id="@+id/seekBarRangeSensitivity"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="4dp"
-                                android:max="17"
-                                android:progress="7" />
-
-                            <LinearLayout
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:orientation="horizontal">
-                                <TextView
+                                <RadioButton
+                                    android:id="@+id/rb10km"
                                     android:layout_width="0dp"
                                     android:layout_height="wrap_content"
                                     android:layout_weight="1"
-                                    android:text="Recent"
-                                    android:textSize="11sp"
-                                    android:textColor="?attr/colorOnSurface" />
-                                <TextView
-                                    android:layout_width="wrap_content"
+                                    android:text="10 km"
+                                    android:textSize="13sp"
+                                    android:textColor="?attr/colorOnSurface"
+                                    android:checked="true" />
+
+                                <RadioButton
+                                    android:id="@+id/rb15km"
+                                    android:layout_width="0dp"
                                     android:layout_height="wrap_content"
-                                    android:text="Historic"
-                                    android:textSize="11sp"
+                                    android:layout_weight="1"
+                                    android:text="15 km"
+                                    android:textSize="13sp"
                                     android:textColor="?attr/colorOnSurface" />
-                            </LinearLayout>
+
+                            </RadioGroup>
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnClearHistory"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="8dp"
+                                android:text="Clear Range History"
+                                android:textColor="@color/data_text"
+                                app:backgroundTint="@color/data_button_bg"
+                                style="@style/Widget.Material3.Button.TonalButton" />
+
                         </LinearLayout>
                     </LinearLayout>
 
+                    <!-- Battery Alert -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="24dp"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical">
+                        android:orientation="vertical"
+                        android:layout_marginTop="24dp">
 
                         <TextView
-                            android:layout_width="0dp"
+                            android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="Battery Alert Frequency"
+                            android:text="Battery Alert"
                             android:textColor="?attr/colorOnSurface"
                             android:textSize="13sp"
                             android:textStyle="bold" />
 
-                        <Spinner
-                            android:id="@+id/spinnerBattery"
-                            android:layout_width="wrap_content"
-                            android:layout_height="48dp"
-                            android:minWidth="120dp" />
+                        <RadioGroup
+                            android:id="@+id/rgBatteryAlert"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:layout_marginTop="6dp">
+
+                            <RadioButton
+                                android:id="@+id/rbBattOff"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="Off"
+                                android:textSize="13sp"
+                                android:textColor="?attr/colorOnSurface"
+                                android:checked="true" />
+
+                            <RadioButton
+                                android:id="@+id/rbBatt5"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="Every 5%"
+                                android:textSize="13sp"
+                                android:textColor="?attr/colorOnSurface" />
+
+                            <RadioButton
+                                android:id="@+id/rbBatt10"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="Every 10%"
+                                android:textSize="13sp"
+                                android:textColor="?attr/colorOnSurface" />
+
+                        </RadioGroup>
+
+                    </LinearLayout>
+
+                    <!-- Audible Assist Mode -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:layout_marginTop="24dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="Audible Assist Mode"
+                                android:textColor="?attr/colorOnSurface"
+                                android:textSize="13sp"
+                                android:textStyle="bold" />
+
+                            <Switch
+                                android:id="@+id/switchAssistAnnounce"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:checked="true" />
+
+                        </LinearLayout>
+
 
                     </LinearLayout>
 

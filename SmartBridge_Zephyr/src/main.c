@@ -1,3 +1,4 @@
+#include <string.h>
 #include <hal/nrf_power.h>
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
@@ -72,7 +73,7 @@ static const struct gpio_dt_spec vbat_en =
 /* STATE MACHINE                                                   */
 /* ─────────────────────────────────────────────────────────────── */
 
-enum sleep_wake_state { AWAKE, SLEEP_NORMAL, SLEEP_TRANSPORT };
+enum sleep_wake_state { AWAKE, SLEEP_NORMAL, SLEEP_DEEP, SLEEP_TRANSPORT };
 static enum sleep_wake_state current_state = AWAKE;
 
 static bool transport_mode = false;
@@ -80,11 +81,16 @@ static volatile bool     wake_requested = false;
 static volatile uint8_t  tap_count      = 0;
 static volatile uint32_t first_tap_time = 0;
 
-#define TAP_WINDOW_MS    3000UL
-#define TAP_WAKE_COUNT   5
-#define SLEEP_TIMEOUT_MS 180000UL
+#define TAP_WINDOW_MS          3000UL
+#define TAP_WAKE_COUNT         5
+#define SLEEP_TIMEOUT_MS       180000UL
+#define DEEP_SLEEP_TIMEOUT_MS  (90UL * 60UL * 1000UL)  /* 90 mins stationary → deep sleep */
+#define DEEP_SLEEP_POLL_MS     (30UL * 60UL * 1000UL)         /* check every 30 min; worst case 3h30m */
+#define DEEP_WAKE_THS          0x28   /*  deliberate shake */
+#define DEEP_WAKE_DUR          0x03   /* 3 samples @ 50 Hz */
 
-static uint32_t last_activity_time = 0;
+static uint32_t last_activity_time      = 0;
+static uint32_t sleep_normal_entered_ms = 0;
 
 #define GPREGRET_TRANSPORT_BIT BIT(0)
 
@@ -158,18 +164,37 @@ static struct bt_conn *last_conn    = NULL;
 
 static uint8_t cpm_buf[9];
 
-/* Advertising packet — primary (UUID16 + name) */
-static const struct bt_data ad[] = {
+/* Advertising packet — primary (UUID16 + name).
+ * Name bytes filled in at runtime by set_name_from_ficr() — ad[] has
+ * 24 bytes of headroom (7/31 used by Flags+UUID16), so the full
+ * "SmartBridge_XXXX" name fits  */
+static uint8_t adv_name_buf[24];
+static struct bt_data ad[] = {
     BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
     BT_DATA_BYTES(BT_DATA_UUID16_ALL, 0x18, 0x18),
+    BT_DATA(BT_DATA_NAME_COMPLETE, adv_name_buf, 0), /* data_len set at runtime */
 };
 
 static const struct bt_le_adv_param adv_param =
     BT_LE_ADV_PARAM_INIT(
-        BT_LE_ADV_OPT_CONNECTABLE | BT_LE_ADV_OPT_USE_NAME,
+        BT_LE_ADV_OPT_CONNECTABLE,
         BT_GAP_ADV_FAST_INT_MIN_2,
         BT_GAP_ADV_FAST_INT_MAX_2,
         NULL);
+
+/* After ADV_FAST_TIMEOUT_MS of advertising with nothing connecting, drop to
+ * a slower interval */
+#define ADV_FAST_TIMEOUT_MS 20000UL
+
+static const struct bt_le_adv_param adv_param_slow =
+    BT_LE_ADV_PARAM_INIT(
+        BT_LE_ADV_OPT_CONNECTABLE,
+        BT_GAP_ADV_SLOW_INT_MIN,
+        BT_GAP_ADV_SLOW_INT_MAX,
+        NULL);
+
+static bool     fast_adv_active = true;
+static uint32_t adv_switch_time = 0;
 
 /* Scan response — custom 128-bit UUID (little-endian) */
 static const struct bt_data sd[] = {
@@ -184,6 +209,8 @@ static const struct bt_data sd[] = {
 
 #define LSM6DS3_ADDR    0x6A
 #define REG_CTRL1_XL    0x10
+#define REG_CTRL6_C     0x15
+#define CTRL6_C_XL_HM_MODE  BIT(4)  /* 1 = accel low-power mode, 0 = high-performance */
 #define REG_TAP_CFG1    0x58
 #define REG_TAP_THS_6D  0x59
 #define REG_INT_DUR2    0x5A
@@ -526,6 +553,8 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
         if (err && err != -EALREADY) {
             printk("Failed to restart advertising (err %d)\n", err);
         }
+        fast_adv_active = true;
+        adv_switch_time = k_uptime_get_32();
     }
 }
 
@@ -611,6 +640,12 @@ static void configure_imu_for_state(void)
     imu_write(REG_TAP_CFG1, 0x00);
     k_msleep(20);
 
+    /* Accelerometer power mode: Switch to
+     * low-power mode whenever we're not AWAKE (ODR is 0 while awake anyway,
+     * so the mode bit doesn't matter there). */
+    uint8_t ctrl6c = (current_state == AWAKE) ? 0x00 : CTRL6_C_XL_HM_MODE;
+    imu_write(REG_CTRL6_C, ctrl6c);
+
     /* 0x30 = 50 Hz ODR while sleeping; 0x00 = off while awake */
     uint8_t odr = (current_state == AWAKE) ? 0x00 : 0x30;
     imu_write(REG_CTRL1_XL, odr);
@@ -627,6 +662,13 @@ static void configure_imu_for_state(void)
         imu_write(REG_INT_DUR2,   0x7E);
         imu_write(REG_MD1_CFG,    0x40);
         printk("IMU: Transport sleep (firm taps)\n");
+    } else if (current_state == SLEEP_DEEP) {
+        imu_write(REG_TAP_CFG1,    0x81);
+        imu_write(REG_WAKE_UP_THS, DEEP_WAKE_THS);
+        imu_write(REG_WAKE_UP_DUR, DEEP_WAKE_DUR);
+        imu_write(REG_MD1_CFG,     0x20);
+        printk("IMU: Deep sleep (~%u mg threshold)\n",
+               (unsigned)(DEEP_WAKE_THS * 78U / 10U));
     } else {
         imu_write(REG_TAP_CFG1,    0x81);
         imu_write(REG_WAKE_UP_THS, 0x08);
@@ -661,7 +703,8 @@ static void imu_int_work_handler(struct k_work *work)
         if (tap_count >= TAP_WAKE_COUNT) {
             k_sem_give(&sleep_wake_sem);
         }
-    } else if (current_state == SLEEP_NORMAL) {
+    } else if (current_state == SLEEP_NORMAL ||
+               current_state == SLEEP_DEEP) {
         wake_requested = true;
         k_sem_give(&sleep_wake_sem);
     }
@@ -823,9 +866,14 @@ static void send_status_to_phone(void)
 {
     if (!android_conn) return;
 
-    uint8_t payload[2] = { battery_percent, (uint8_t)transport_mode };
+    uint8_t payload[5] = {
+        battery_percent,
+        (uint8_t)transport_mode,
+        FW_VERSION_MAJOR,
+        FW_VERSION_MINOR,
+        FW_VERSION_PATCH
+    };
     bt_gatt_notify(android_conn, &android_svc.attrs[4], payload, sizeof(payload));
-
 }
 
 /* ─────────────────────────────────────────────────────────────── */
@@ -846,25 +894,50 @@ static void enter_sleep(void)
     if (android_conn) { bt_conn_disconnect(android_conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN); }
     k_msleep(200);
 
+    wake_requested          = false;
+    tap_count               = 0;
+    first_tap_time          = 0;
+    sleep_normal_entered_ms = k_uptime_get_32();
+    k_sem_reset(&sleep_wake_sem);
+
     set_leds();
     configure_imu_for_state();
 
     printk(">>> ENTERED %s SLEEP\n",
            (current_state == SLEEP_TRANSPORT) ? "TRANSPORT" : "NORMAL");
 
-    wake_requested = false;
-    tap_count      = 0;
-    first_tap_time = 0;
-    k_sem_reset(&sleep_wake_sem);
-
     while (current_state != AWAKE) {
-        /* Block indefinitely until the IMU work handler posts the semaphore.
-         * The CPU enters WFI (wait-for-interrupt) inside k_sem_take, drawing
-         * only ~3-4 µA */
-        k_sem_take(&sleep_wake_sem, K_FOREVER);
+        /* Poll every 30 minutes while in SLEEP_NORMAL so we can check
+         * whether the 3-hour deep-sleep threshold has been reached without
+         * any movement. SLEEP_DEEP and SLEEP_TRANSPORT block indefinitely —
+         * their transitions are purely interrupt-driven, so no polling
+         * overhead once the deeper state is entered. */
+        k_timeout_t timeout = (current_state == SLEEP_NORMAL)
+                              ? K_MSEC(DEEP_SLEEP_POLL_MS)
+                              : K_FOREVER;
 
-        if (wake_requested) {
-            printk(">>> MOVEMENT - waking normal sleep\n");
+        int rc = k_sem_take(&sleep_wake_sem, timeout);
+
+        if (rc == -EAGAIN) {
+
+            uint32_t elapsed = k_uptime_get_32() - sleep_normal_entered_ms;
+            if (current_state == SLEEP_NORMAL &&
+                elapsed >= DEEP_SLEEP_TIMEOUT_MS) {
+                printk(">>> %lu min stationary — upgrading to deep sleep\n",
+                       (unsigned long)(elapsed / 60000UL));
+                current_state  = SLEEP_DEEP;
+                wake_requested = false;
+                k_sem_reset(&sleep_wake_sem);
+                configure_imu_for_state();
+            }
+            continue;
+        }
+
+
+        if (wake_requested && (current_state == SLEEP_NORMAL ||
+                               current_state == SLEEP_DEEP)) {
+            printk(">>> MOVEMENT - waking from %s sleep\n",
+                   (current_state == SLEEP_DEEP) ? "deep" : "normal");
             wake_up();
             break;
         }
@@ -889,6 +962,8 @@ static void wake_up(void)
     if (err && err != -EALREADY) {
         printk("Adv restart failed (err %d)\n", err);
     }
+    fast_adv_active = true;
+    adv_switch_time = k_uptime_get_32();
     #ifdef CONFIG_SMARTBRIDGE_ANT
         ant_bpwr_start();
         ant_lev_start();
@@ -929,6 +1004,11 @@ static void set_name_from_ficr(void)
     char name[24];
     snprintk(name, sizeof(name), "SmartBridge_%02X%02X", b1, b0);
     bt_set_name(name);
+
+    size_t len = strlen(name);
+    memcpy(adv_name_buf, name, len);
+    ad[2].data_len = len; /* BT_DATA_NAME_COMPLETE entry */
+
     printk("BT name: %s\n", bt_get_name());
 }
 
@@ -978,6 +1058,13 @@ static void load_transport_mode(void)
 /* ─────────────────────────────────────────────────────────────── */
 /* MAIN                                                            */
 /* ─────────────────────────────────────────────────────────────── */
+
+
+static inline uint32_t ms_until(uint32_t now, uint32_t last, uint32_t period)
+{
+    uint32_t elapsed = now - last;
+    return (elapsed >= period) ? 0 : (period - elapsed);
+}
 
 int main(void)
 {
@@ -1038,6 +1125,8 @@ int main(void)
     } else {
         printk("Advertising started\n");
     }
+    fast_adv_active = true;
+    adv_switch_time = k_uptime_get_32();
 
     #ifdef CONFIG_SMARTBRIDGE_ANT
         err = ant_bpwr_setup();
@@ -1054,13 +1143,16 @@ int main(void)
         uint32_t last_ant_update    = 0;
     #endif
     uint32_t last_crank_update = 0;
+    uint32_t last_blue_blink   = 0;
 
     while (1) {
         uint32_t now = k_uptime_get_32();
 
-        if (now - last_crank_update >= 10) {
+        if (target_cadence > 0 && now - last_crank_update >= 10) {
             update_crank();
             last_crank_update = now;
+        } else if (target_cadence == 0) {
+            last_crank_advance = now;
         }
 
         if (current_state == AWAKE &&
@@ -1073,7 +1165,6 @@ int main(void)
         }
 
         /* ── Blue LED: blink while advertising to phone, off when phone connected ── */
-        static uint32_t last_blue_blink = 0;
         if (current_state == AWAKE) {
             if ( android_conn == NULL) {
                 /* Advertising — blink blue at 1 Hz */
@@ -1111,7 +1202,37 @@ int main(void)
         /* ── Periodic battery read ── */
         update_battery();
 
-        k_sleep(K_MSEC(10));
+        /* ── Drop to slow advertising if nothing has connected recently ── */
+        if (current_state == AWAKE && fast_adv_active &&
+            garmin_conn == NULL && android_conn == NULL &&
+            now - adv_switch_time > ADV_FAST_TIMEOUT_MS) {
+
+            bt_le_adv_stop();
+            int aerr = bt_le_adv_start(&adv_param_slow, ad, ARRAY_SIZE(ad),
+                                        sd, ARRAY_SIZE(sd));
+            if (aerr && aerr != -EALREADY) {
+                printk("Slow adv restart failed (err %d)\n", aerr);
+            } else {
+                printk("Switched to slow advertising\n");
+            }
+            fast_adv_active = false;
+        }
+
+        uint32_t next_wake = 1000;
+        if (target_cadence > 0) {
+            next_wake = MIN(next_wake, 10);
+        }
+        next_wake = MIN(next_wake, ms_until(now, last_ble_notify, 750));
+        #ifdef CONFIG_SMARTBRIDGE_ANT
+            next_wake = MIN(next_wake, ms_until(now, last_ant_update, 250));
+        #endif
+        next_wake = MIN(next_wake, ms_until(now, last_blue_blink, 500));
+        next_wake = MIN(next_wake, ms_until(now, last_batt_read, 5000));
+        if (next_wake == 0) {
+            next_wake = 1; /* never a zero-length sleep */
+        }
+
+        k_sleep(K_MSEC(next_wake));
     }
 
     return 0;

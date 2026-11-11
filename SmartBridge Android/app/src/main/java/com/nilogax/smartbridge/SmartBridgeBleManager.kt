@@ -62,6 +62,9 @@ class SmartBridgeBleManager(
     var isConnected = false
         private set
 
+    var bridgeFirmwareVersion: String? = null
+        private set
+
     var transportMode: Boolean = false
         private set
 
@@ -120,6 +123,10 @@ class SmartBridgeBleManager(
     }
 
     fun connectToSavedDevice(mac: String) {
+        if (isConnected || reconnectScanRunnable != null) {
+            Log.d(TAG, "connectToSavedDevice ignored — already connected or reconnect scan active")
+            return
+        }
         targetMac = mac
         val device = bluetoothAdapter.getRemoteDevice(mac)
         connect(device)
@@ -132,6 +139,7 @@ class SmartBridgeBleManager(
         targetMac = null
         isConnected = false
         bridgeBattery = -1
+        bridgeFirmwareVersion = null
         onStateChange(BleState.IDLE, "Not Paired")
     }
 
@@ -197,6 +205,7 @@ class SmartBridgeBleManager(
                 BluetoothProfile.STATE_DISCONNECTED -> {
                     Log.d(TAG, "GATT Disconnected")
                     isConnected = false
+                    bridgeFirmwareVersion = null
                     stopWriteLoop()
                     rxCharacteristic = null
                     lastSentData = null
@@ -257,7 +266,7 @@ class SmartBridgeBleManager(
             if (characteristic.uuid == TX_CHAR_UUID) {
                 @Suppress("DEPRECATION")
                 characteristic.value?.let {
-                    if (it.isNotEmpty()) handleBatteryNotification(it[0].toInt() and 0xFF)
+                    if (it.isNotEmpty()) handleIncomingStatus(it)  // was handleBatteryNotification
                 }
             }
         }
@@ -306,8 +315,19 @@ class SmartBridgeBleManager(
                 prefs.edit().putBoolean(
                     "transport_mode",
                     transportMode
-                )
+                ).apply()
                 Log.d(TAG, "Board reported Transport Mode: $transportMode")
+            }
+
+            if (value.size >= 5) {
+                val major = value[2].toInt() and 0xFF
+                val minor = value[3].toInt() and 0xFF
+                val patch = value[4].toInt() and 0xFF
+                val version = "$major.$minor.$patch"
+                if (bridgeFirmwareVersion != version) {
+                    bridgeFirmwareVersion = version
+                    Log.i(TAG, "Bridge firmware version: $version")
+                }
             }
 
             mainHandler.post {

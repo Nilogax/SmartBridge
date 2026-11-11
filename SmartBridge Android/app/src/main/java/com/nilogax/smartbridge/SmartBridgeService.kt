@@ -24,6 +24,9 @@ class SmartBridgeService : Service() {
     private var autoStopLoggingRunnable: Runnable? = null
     private var lastRideData: BoschRideData? = null
 
+    private lateinit var assistModeAnnouncer: AssistModeAnnouncer
+    private var lastAssistMode: Int = -1
+
     private val emulatorHandler = Handler(Looper.getMainLooper())
     private var dataEmulatorEnabled = false
     private var emulatorRunnable: Runnable? = null
@@ -88,6 +91,10 @@ class SmartBridgeService : Service() {
                 val nowBikeConnected = status.startsWith("Connected")
                 if (nowBikeConnected && !wasBikeConnected) {
                     maybeNotifyTransportModeWarning()
+                    assistModeAnnouncer.onConnected()
+                    lastAssistMode = -1
+                } else if (!nowBikeConnected && wasBikeConnected) {
+                    assistModeAnnouncer.onDisconnected()
                 }
                 wasBikeConnected = nowBikeConnected
                 // Start/stop emulator depending on bike connection state.
@@ -97,6 +104,10 @@ class SmartBridgeService : Service() {
             },
             onDataUpdate = { data ->
                 lastRideData = data
+                if (data.assistMode != lastAssistMode) {
+                    assistModeAnnouncer.onMode(data.assistMode)
+                    lastAssistMode = data.assistMode
+                }
                 listener?.onRideDataChanged(data)
                 bridgeManager.updateData(
                     data.riderPower,
@@ -106,7 +117,7 @@ class SmartBridgeService : Service() {
                     data.assistMode,
                     odometerMetres      = data.odometerMetres,
                     speedHundredthsKmh  = data.speedHundredthsKmh,
-                    remainingRangeKm    = data.estimatedRangeKm ?: 0
+                    remainingRangeKm    = data.estimatedRangeKmWh ?: 0
                 )
             },
             onRawPacketReceived = { ts, hex, label, messageId, value ->
@@ -131,6 +142,10 @@ class SmartBridgeService : Service() {
             }
             wasBridgeConnected = nowConnected
         }
+
+        // Assist mode announcer — initialised after managers so prefs are available
+        assistModeAnnouncer = AssistModeAnnouncer(this)
+        assistModeAnnouncer.setEnabled(prefs.getBoolean("assist_announce_enabled", true))
 
         // If emulator was enabled last run, start it once managers exist.
         maybeStartDataEmulator()
@@ -264,6 +279,7 @@ class SmartBridgeService : Service() {
     override fun onDestroy() {
         Log.d(TAG, "Service destroyed")
         isStopping = true
+        assistModeAnnouncer.destroy()
         bikeManager.disconnect()
         bridgeManager.disconnect()
         (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(NOTIFICATION_ID)
@@ -429,6 +445,11 @@ class SmartBridgeService : Service() {
     }
 
     fun isLogging(): Boolean = isLoggingEnabled
+
+    fun setAssistAnnounceEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("assist_announce_enabled", enabled).apply()
+        assistModeAnnouncer.setEnabled(enabled)
+    }
 
     fun isDataEmulatorEnabled(): Boolean = dataEmulatorEnabled
 

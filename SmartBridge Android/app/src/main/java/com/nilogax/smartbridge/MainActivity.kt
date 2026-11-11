@@ -27,17 +27,17 @@ class MainActivity : AppCompatActivity(), SmartBridgeService.UiListener {
     private lateinit var tvCadence: TextView
     private lateinit var tvBikeBattery: TextView
     private lateinit var tvEstimatedRange: TextView
-    private lateinit var seekBarRangeSensitivity: SeekBar
-    private lateinit var tvRangeSensitivityValue: TextView
+    private lateinit var rgRangeHistory: RadioGroup
+    private lateinit var btnClearHistory: Button
     private lateinit var tvBikeName: TextView
     private lateinit var tvBridgeName: TextView
     private lateinit var btnBikeAction: Button
     private lateinit var btnBridgeAction: Button
     private lateinit var btnToggleLogging: Button
-    private lateinit var spinnerBattery: Spinner
-
+    private lateinit var rgBatteryAlert: RadioGroup
     private lateinit var btnTransportMode: Button
     private lateinit var switchDataEmulator: Switch
+    private lateinit var switchAssistAnnounce: Switch
 
     private var isLoggingEnabled = false
 
@@ -58,33 +58,36 @@ class MainActivity : AppCompatActivity(), SmartBridgeService.UiListener {
             onLoggingStateChanged(service!!.isLogging())
             switchDataEmulator.isChecked = service!!.isDataEmulatorEnabled()
             applyBatteryThreshold()
-            // Restore slider to match whatever sensitivity the bikeManager already loaded
-            val savedSens = service!!.bikeManager.rangeSensitivity
-            seekBarRangeSensitivity.progress = savedSens - 3   // slider 0..17 maps to 3..20
-            updateSensitivityLabel(savedSens)
+            applyBatteryAlertToRadioGroup(prefs.getInt("battery_alert_pos", 0))
+            switchAssistAnnounce.isChecked = prefs.getBoolean("assist_announce_enabled", true)
+            // Restore RadioGroup to match the history the bikeManager already loaded from prefs
+            val historyKm = prefs.getInt("range_history_km", 10)
+            applyHistoryKmToRadioGroup(historyKm)
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
             service = null
             serviceBound = false
         }
-
-
     }
-
 
     override fun onBikeStatusChanged(status: String) {
         runOnUiThread {
             tvBikeStatus.text = status
-            val bikeConnected = status.startsWith("Connected")
-            // Emulator is only meaningful when the bike is NOT connected.
-            switchDataEmulator.isEnabled = !bikeConnected
+            switchDataEmulator.isEnabled = !status.startsWith("Connected")
         }
     }
 
     override fun onBridgeStatusChanged(status: String) {
         runOnUiThread {
             tvBridgeStatus.text = status
+            // Append firmware version to the bridge name as soon as it arrives from the board
+            if (status.startsWith("Connected")) {
+                val savedName = prefs.getString("last_bridge_name", null) ?: ""
+                val version = service?.bridgeManager?.bridgeFirmwareVersion
+                tvBridgeName.text = if (version != null) "$savedName $version" else savedName
+                tvBridgeName.visibility = View.VISIBLE
+            }
             refreshTransportButton()
         }
     }
@@ -95,20 +98,18 @@ class MainActivity : AppCompatActivity(), SmartBridgeService.UiListener {
             tvMotorPower.text  = "${data.motorPower} W"
             tvCadence.text     = "${data.cadence} RPM"
             tvBikeBattery.text = "${data.batteryPercent}%"
-            tvEstimatedRange.text = data.estimatedRangeKm
+            tvEstimatedRange.text = data.estimatedRangeKmWh
                 ?.let { "%d km".format(it) }
                 ?: "— km"
         }
     }
 
     override fun onRawPacket(timestamp: Long, rawHex: String, label: String, messageId: String, value: String) {
-        // Logging is handled in the service; UI only displays live data.
+        // Logging handled in service; UI only shows live data.
     }
 
     override fun onLogSaved(fileName: String) {
-        runOnUiThread {
-            Toast.makeText(this, "Log saved: $fileName", Toast.LENGTH_LONG).show()
-        }
+        runOnUiThread { Toast.makeText(this, "Log saved: $fileName", Toast.LENGTH_LONG).show() }
     }
 
     override fun onLoggingStateChanged(isLogging: Boolean) {
@@ -125,10 +126,11 @@ class MainActivity : AppCompatActivity(), SmartBridgeService.UiListener {
         bindUI()
         setupActionButtons()
         setupLoggingButton()
-        setupBatterySpinner()
+        setupBatteryAlertControls()
         setupTransportModeButton()
         setupDataEmulatorSwitch()
-        setupRangeSensitivitySlider()
+        setupRangeHistoryControls()
+        setupAudioControls()
     }
 
     override fun onStart() {
@@ -150,32 +152,30 @@ class MainActivity : AppCompatActivity(), SmartBridgeService.UiListener {
     private fun startAndBindService() {
         if (serviceBound) return
         val intent = Intent(this, SmartBridgeService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(intent)
-        } else {
-            startService(intent)
-        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(intent)
+        else startService(intent)
         bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
     }
 
     private fun bindUI() {
-        tvBikeStatus   = findViewById(R.id.tvBikeStatus)
-        tvBridgeStatus = findViewById(R.id.tvBridgeStatus)
-        tvRiderPower   = findViewById(R.id.tvRiderPower)
-        tvMotorPower   = findViewById(R.id.tvMotorPower)
-        tvCadence      = findViewById(R.id.tvCadence)
-        tvBikeBattery  = findViewById(R.id.tvBikeBattery)
-        tvEstimatedRange          = findViewById(R.id.tvEstimatedRange)
-        seekBarRangeSensitivity   = findViewById(R.id.seekBarRangeSensitivity)
-        tvRangeSensitivityValue   = findViewById(R.id.tvRangeSensitivityValue)
-        tvBikeName     = findViewById(R.id.tvBikeName)
-        tvBridgeName   = findViewById(R.id.tvBridgeName)
-        btnBikeAction  = findViewById(R.id.btnBikeAction)
-        btnBridgeAction  = findViewById(R.id.btnBridgeAction)
-        btnToggleLogging = findViewById(R.id.btnToggleLogging)
-        spinnerBattery   = findViewById(R.id.spinnerBattery)
-        btnTransportMode = findViewById(R.id.btnTransportMode)
-        switchDataEmulator = findViewById(R.id.switchDataEmulator)
+        tvBikeStatus      = findViewById(R.id.tvBikeStatus)
+        tvBridgeStatus    = findViewById(R.id.tvBridgeStatus)
+        tvRiderPower      = findViewById(R.id.tvRiderPower)
+        tvMotorPower      = findViewById(R.id.tvMotorPower)
+        tvCadence         = findViewById(R.id.tvCadence)
+        tvBikeBattery     = findViewById(R.id.tvBikeBattery)
+        tvEstimatedRange  = findViewById(R.id.tvEstimatedRange)
+        rgRangeHistory    = findViewById(R.id.rgRangeHistory)
+        btnClearHistory   = findViewById(R.id.btnClearHistory)
+        tvBikeName        = findViewById(R.id.tvBikeName)
+        tvBridgeName      = findViewById(R.id.tvBridgeName)
+        btnBikeAction     = findViewById(R.id.btnBikeAction)
+        btnBridgeAction   = findViewById(R.id.btnBridgeAction)
+        btnToggleLogging  = findViewById(R.id.btnToggleLogging)
+        rgBatteryAlert    = findViewById(R.id.rgBatteryAlert)
+        btnTransportMode  = findViewById(R.id.btnTransportMode)
+        switchDataEmulator  = findViewById(R.id.switchDataEmulator)
+        switchAssistAnnounce = findViewById(R.id.switchAssistAnnounce)
     }
 
     private fun refreshButtonsAndNames() {
@@ -195,27 +195,15 @@ class MainActivity : AppCompatActivity(), SmartBridgeService.UiListener {
 
     private fun refreshTransportButton() {
         val isTransport = service?.isTransportMode() ?: false
-        btnTransportMode.text = if (isTransport)
-            "Set Ride Mode"
-        else
-            "Set Transport Mode"
-
+        btnTransportMode.text = if (isTransport) "Set Ride Mode" else "Set Transport Mode"
         btnTransportMode.setBackgroundColor(
-            if (isTransport)
-                getColor(R.color.bike_button_bg)
-            else
-                getColor(R.color.bridge_button_bg)
+            if (isTransport) getColor(R.color.bike_button_bg) else getColor(R.color.bridge_button_bg)
         )
-
         btnTransportMode.setTextColor(
-            if (isTransport)
-                getColor(R.color.bike_text)
-            else
-                getColor(R.color.bridge_text)
+            if (isTransport) getColor(R.color.bike_text) else getColor(R.color.bridge_text)
         )
-
-        btnTransportMode.visibility = if (tvBridgeStatus.text.startsWith("Connected"))  View.VISIBLE
-        else View.GONE
+        btnTransportMode.visibility =
+            if (tvBridgeStatus.text.startsWith("Connected")) View.VISIBLE else View.GONE
     }
 
     private fun setupActionButtons() {
@@ -294,8 +282,6 @@ class MainActivity : AppCompatActivity(), SmartBridgeService.UiListener {
     }
 
     private fun startBridgeScan() {
-        // Use a throwaway manager just for scanning — actual connection goes through
-        // the service's bridgeManager so state flows correctly via the UiListener.
         val scanManager = SmartBridgeBleManager(this) { _, _ -> }
 
         val foundDevices = mutableListOf<BluetoothDevice>()
@@ -329,7 +315,6 @@ class MainActivity : AppCompatActivity(), SmartBridgeService.UiListener {
                 .putString("last_bridge_mac", device.address)
                 .putString("last_bridge_name", device.name ?: "SmartBridge")
                 .apply()
-
             service?.bridgeManager?.connect(device)
             refreshButtonsAndNames()
             Log.d("MainActivity", "Bridge MAC saved: ${device.address}")
@@ -338,15 +323,10 @@ class MainActivity : AppCompatActivity(), SmartBridgeService.UiListener {
         dialog.show()
     }
 
-
     private fun setupLoggingButton() {
         btnToggleLogging.setOnClickListener {
             val svc = service ?: return@setOnClickListener
             if (!isLoggingEnabled) {
-                /*if (!svc.bikeManager.isConnected) {
-                    Toast.makeText(this, "Connect bike first", Toast.LENGTH_SHORT).show()
-                    return@setOnClickListener
-                }*/
                 svc.startLogging()
                 Toast.makeText(this, "Logging started in background...", Toast.LENGTH_SHORT).show()
             } else {
@@ -355,48 +335,47 @@ class MainActivity : AppCompatActivity(), SmartBridgeService.UiListener {
         }
     }
 
-
-
-    private fun setupBatterySpinner() {
-        val options = arrayOf("Off", "5%", "10%")
-        spinnerBattery.adapter = ArrayAdapter(this, R.layout.spinner_item, options)
-        spinnerBattery.setSelection(prefs.getInt("battery_alert_pos", 0))
-        spinnerBattery.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>?, view: View?, pos: Int, id: Long) {
-                prefs.edit().putInt("battery_alert_pos", pos).apply()
-                applyBatteryThreshold()
+    private fun setupBatteryAlertControls() {
+        applyBatteryAlertToRadioGroup(prefs.getInt("battery_alert_pos", 0))
+        rgBatteryAlert.setOnCheckedChangeListener { _, checkedId ->
+            val pos = when (checkedId) {
+                R.id.rbBatt5  -> 1
+                R.id.rbBatt10 -> 2
+                else          -> 0
             }
-            override fun onNothingSelected(parent: AdapterView<*>?) {}
+            prefs.edit().putInt("battery_alert_pos", pos).apply()
+            applyBatteryThreshold()
         }
     }
+
+    private fun applyBatteryAlertToRadioGroup(pos: Int) {
+        rgBatteryAlert.check(when (pos) {
+            1    -> R.id.rbBatt5
+            2    -> R.id.rbBatt10
+            else -> R.id.rbBattOff
+        })
+    }
+
     private fun setupTransportModeButton() {
         btnTransportMode.setOnClickListener {
-            val bridgeConnected = service?.bridgeManager?.isConnected == true
-
-            if (!bridgeConnected) {
+            if (service?.bridgeManager?.isConnected != true) {
                 Toast.makeText(this, "Bridge must be connected", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-
             val currentMode = service?.isTransportMode() ?: false
             val targetMode = !currentMode
             val targetName = if (targetMode) "Transport Mode" else "Ride Mode"
-
             AlertDialog.Builder(this)
                 .setTitle("Change Operating Mode")
                 .setMessage("Switch to $targetName?")
-                .setPositiveButton("Yes") { _, _ ->
-                    service?.setTransportMode(targetMode)
-                }
+                .setPositiveButton("Yes") { _, _ -> service?.setTransportMode(targetMode) }
                 .setNegativeButton("Cancel", null)
                 .show()
         }
     }
 
     private fun setupDataEmulatorSwitch() {
-        val enabled = prefs.getBoolean("data_emulator", false)
-        switchDataEmulator.isChecked = enabled
-
+        switchDataEmulator.isChecked = prefs.getBoolean("data_emulator", false)
         switchDataEmulator.setOnCheckedChangeListener { _, isChecked ->
             prefs.edit().putBoolean("data_emulator", isChecked).apply()
             service?.setDataEmulatorEnabled(isChecked)
@@ -408,26 +387,48 @@ class MainActivity : AppCompatActivity(), SmartBridgeService.UiListener {
         }
     }
 
-    private fun setupRangeSensitivitySlider() {
-        // SeekBar max=17 → values 3..20 (progress+3)
-        val saved = prefs.getInt("range_sensitivity", 10)
-        seekBarRangeSensitivity.progress = (saved - 3).coerceIn(0, 17)
-        updateSensitivityLabel(saved)
+    private fun setupRangeHistoryControls() {
+        val savedKm = prefs.getInt("range_history_km", 10)
+        applyHistoryKmToRadioGroup(savedKm)
 
-        seekBarRangeSensitivity.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(bar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
-                val sensitivity = progress + 3   // 3..20
-                updateSensitivityLabel(sensitivity)
-                prefs.edit().putInt("range_sensitivity", sensitivity).apply()
-                service?.bikeManager?.rangeSensitivity = sensitivity
+        rgRangeHistory.setOnCheckedChangeListener { _, checkedId ->
+            val km = when (checkedId) {
+                R.id.rb5km  -> 5
+                R.id.rb15km -> 15
+                else        -> 10
             }
-            override fun onStartTrackingTouch(bar: android.widget.SeekBar?) {}
-            override fun onStopTrackingTouch(bar: android.widget.SeekBar?) {}
+            prefs.edit().putInt("range_history_km", km).apply()
+            service?.bikeManager?.rangeHistorySegments = km * 4
+        }
+
+        btnClearHistory.setOnClickListener {
+            AlertDialog.Builder(this)
+                .setTitle("Clear Range History")
+                .setMessage(
+                    "This will delete all learned Wh/km data for every assist mode " +
+                            "and all SOC band calibration.\n\nThe bike will remain paired but " +
+                            "range estimates will reset to defaults until new data is collected."
+                )
+                .setPositiveButton("Clear") { _, _ -> service?.bikeManager?.clearHistory() }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
+    }
+
+    private fun applyHistoryKmToRadioGroup(km: Int) {
+        rgRangeHistory.check(when (km) {
+            5    -> R.id.rb5km
+            15   -> R.id.rb15km
+            else -> R.id.rb10km
         })
     }
 
-    private fun updateSensitivityLabel(sensitivity: Int) {
-        tvRangeSensitivityValue.text = "Last $sensitivity"
+    private fun setupAudioControls() {
+        switchAssistAnnounce.isChecked = prefs.getBoolean("assist_announce_enabled", true)
+        switchAssistAnnounce.setOnCheckedChangeListener { _, isChecked ->
+            service?.setAssistAnnounceEnabled(isChecked)
+                ?: prefs.edit().putBoolean("assist_announce_enabled", isChecked).apply()
+        }
     }
 
     private fun applyBatteryThreshold() {
@@ -447,14 +448,9 @@ class MainActivity : AppCompatActivity(), SmartBridgeService.UiListener {
     private fun requestStartupPermissions() {
         val perms = buildList {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                add(Manifest.permission.BLUETOOTH_SCAN)
-                add(Manifest.permission.BLUETOOTH_CONNECT)
-            } else {
-                add(Manifest.permission.ACCESS_FINE_LOCATION)
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                add(Manifest.permission.POST_NOTIFICATIONS)
-            }
+                add(Manifest.permission.BLUETOOTH_SCAN); add(Manifest.permission.BLUETOOTH_CONNECT)
+            } else add(Manifest.permission.ACCESS_FINE_LOCATION)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.POST_NOTIFICATIONS)
         }
         permissionLauncher.launch(perms.toTypedArray())
     }
@@ -462,14 +458,9 @@ class MainActivity : AppCompatActivity(), SmartBridgeService.UiListener {
     private fun requestPermissions(action: () -> Unit) {
         val perms = buildList {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                add(Manifest.permission.BLUETOOTH_SCAN)
-                add(Manifest.permission.BLUETOOTH_CONNECT)
-            } else {
-                add(Manifest.permission.ACCESS_FINE_LOCATION)
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                add(Manifest.permission.POST_NOTIFICATIONS)
-            }
+                add(Manifest.permission.BLUETOOTH_SCAN); add(Manifest.permission.BLUETOOTH_CONNECT)
+            } else add(Manifest.permission.ACCESS_FINE_LOCATION)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.POST_NOTIFICATIONS)
         }
         val missing = perms.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
         if (missing.isEmpty()) action()

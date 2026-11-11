@@ -168,9 +168,9 @@ Tapping the 'Forget Bike' button will un-pair your bike so you can connect to a 
 
 #### Bridge connection
 
-Make sure the bridge hardware is awake (see below) then press the 'Pair Bridge' button.  Select your bridge (`SmartBridge_xxxx`) to pair it.  Once the bridge is connected the app will show the current bridge battery level.  The app will reconnect to the paired bridge each time it runs.
+Make sure the bridge hardware is awake (see below) then press the 'Pair Bridge' button.  Select your bridge (`SmartBridge_xxxx`) to pair it.  Once the bridge is connected the app will show the current bridge battery level and the firmware version running on the bridge.  The app will reconnect to the paired bridge each time it runs.
 
-Once the bridge is connected you will see a button to toggle between `Transport Mode` and `Ride Mode`.  In Ride Mode the bridge is fairly easy to wake by gentle movement, but in Transport Mode it will only be woken by a series of sharp taps (5 taps in 3 seconds).  Transport Mode is intended to prevent the bridge from waking during car journeys, flights etc so you don't need to unplug the battery.  In Ride Mode the bridge LED will be green, in Transport Mode it is red.
+Once the bridge is connected you will see a button to toggle between `Transport Mode` and `Ride Mode`.  In Ride Mode the bridge is fairly easy to wake by gentle movement, but in Transport Mode it will only be woken by a series of sharp taps (5 taps in 3 seconds).  Transport Mode is intended to prevent the bridge from waking during car journeys, flights etc so you don't need to unplug the battery.  In Ride Mode, after around 90 minutes of inactivity the bridge will drop into a slightly deeper sleep where it needs a little more movement to wake to avoid it waking unnecessarily while stored. In Ride Mode the bridge LED will be green, in Transport Mode it is red.
 
 As with the bike, tapping "Forget Bridge" will un-pair the current bridge so you can switch to different hardware.
 
@@ -180,9 +180,11 @@ The data panel shows the data being received from your bike.  If this doesn't up
 
 If that happens then you can capture a log which could assist with decoding your bike's messages.  Tap the "Start Logging" button and ride on, this will then save a 2 minute log of the data received from your bike in your phone's Downloads folder.  You'll get a notification when it's done.  After that please share the log file in the [Feedback](https://github.com/Nilogax/SmartBridge/discussions/2) discussion so I can try to extract the correct coding.  If no log file is produced that means there is even more work to decode the messages, but it may still be possible so post a discussion topic to get started.
 
-The `Range History` slider allows you to control how much recent data is used to generate the estimated range remaining.  A higher figure uses a longer history, a shorter figure will only look at more recent data.  The range estimate is obtained by storing the distance travelled for each one percent battery drop, then extrapolating an estimated range from that based on the remaining battery level.  The estimate uses the lower bound of the 95% confidence interval of the mean `distance per percent` figures so it should be pessimistic, but it relies on consistent use of assistance modes and consistent terrain.  Connecting or disconnecting a Powermore battery will also lead to erroneous figures until the history has been overwritten.  The estimated range figure will likely differ from that shown in the Flow app or on a Kiox display.
+The `Range History` selection allows you to control how much recent data is used to generate the estimated range remaining.  SmartBridge estimates remaining range for each assist mode by tracking actual motor energy consumption (Wh) over distance, building an efficiency model that learns your riding style and adapts to your specific battery's behaviour across its state of charge. History depth is configurable (5, 10, or 15 km of recent riding), and the estimate uses a conservative statistical confidence bound rather than a simple average. The battery's SOC-to-energy curve is calibrated automatically across multiple rides and persisted between sessions, so the estimate improves over time.  Battery size is updated from the bike's transmitted data so connecting or disconnecting a Powermore battery should be accommodated, but this has not been tested.  The estimated range figure will likely differ from that shown in the Flow app or on a Kiox display.
 
-You can also configure a notification threshold for bike battery updates.  This can be set to Off, 10% or 5% so for example at 5% it will send a phone notification at 95%, then 90% etc.
+You can also configure a notification threshold for bike battery updates.  This can be set to Off, 10% or 5% so for example at 5% it will send a phone notification at 95%, then 90% etc.  The notification also includes the detected battery capacity for information.
+
+The `Audible Assist Mode` switch enables a brief sound to confirm the currently selected assist mode.  This is a longer low tone for `Assist off` then a series of brief higher pitched beeps for other modes - one beep for 'Eco' mode (or the lowest configured assist mode), two beeps for the next mode and so on.  This means that you can get confirmation of the assist mode without taking your eyes off the trail ahead.
 
 ### Bridge usage
 
@@ -194,7 +196,7 @@ Ride Mode is indicated by a green LED on the bridge and should wake with normal 
 
 Transport Mode is indicated by a red LED on the bridge and it will then need repeated sharp taps to wake up.  As the name suggests the aim of Transport Mode is to prevent the bridge from waking while it's being transported and using the battery needlessly - something that SRAM AXS users may have experience of.
 
-The bridge will power down after 3 minutes of 'zero' data from the bike (so no rider power, no motor power and no cadence).  No LEDs are lit when it is powered down.
+The bridge will power down after 3 minutes of 'zero' data from the bike (so no rider power, no motor power and no cadence).  No LEDs are lit when it is powered down.  As mentioned above, after around 90 minutes of inactivity it will enter a slightly deeper sleep where a little more movement is needed to wake it, but a gentle shake should still suffice.
 
 The blue LED will flash if the bridge is trying to connect to the phone.  Once the phone is connected the blue LED will go out.
 
@@ -223,6 +225,11 @@ If you connect the eBike (LEV) sensor then the speed and distance shown on your 
 
 Distributed under the GPL-2.0 license. See ``LICENSE`` for more information.
 
+* 0.9.6 (11/11/2026)
+    * Show bridge firmware version in app
+    * Use power based, mode specific range estimation
+    * Add audible assist mode confirmation
+    * Add deeper sleep for Ride Mode
 * 0.9.5 (18/6/2026)
     * Fix transport mode bug on board
     * No change to Android app
